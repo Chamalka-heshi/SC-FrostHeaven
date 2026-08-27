@@ -79,7 +79,7 @@ function ContactPage() {
           </div>
         </div>
 
-        <form className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
+        <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
           <div className="space-y-2">
             <Label htmlFor="contact-name">Name</Label>
             <Input id="contact-name" placeholder="Your name" className="rounded-xl" />

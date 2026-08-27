@@ -22,7 +22,7 @@ export const Route = createFileRoute("/product/$handle")({
       queryFn: () => fetchProductByHandle(params.handle),
     });
     if (!product) throw notFound();
-    return product as NonNullable<ShopifyProduct["node"]>;
+    return product;
   },
   component: ProductDetailPage,
 });

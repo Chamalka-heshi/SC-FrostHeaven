@@ -1,9 +1,16 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ShoppingBag, Minus, Plus } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
 import { fetchProductByHandle, type ShopifyProduct } from "@/lib/shopify";
+
+async function getProduct(handle: string): Promise<NonNullable<ShopifyProduct["node"]>> {
+  const product = await fetchProductByHandle(handle);
+  if (!product) throw notFound();
+  return product;
+}
 
 export const Route = createFileRoute("/product/$handle")({
   head: ({ params }) => ({
@@ -17,18 +24,20 @@ export const Route = createFileRoute("/product/$handle")({
     ],
   }),
   loader: async ({ context, params }) => {
-    const product = await context.queryClient.ensureQueryData({
+    return context.queryClient.ensureQueryData({
       queryKey: ["product", params.handle],
-      queryFn: () => fetchProductByHandle(params.handle),
+      queryFn: () => getProduct(params.handle),
     });
-    if (!product) throw notFound();
-    return product;
   },
   component: ProductDetailPage,
 });
 
 function ProductDetailPage() {
-  const product = Route.useLoaderData()!;
+  const { handle } = Route.useParams();
+  const { data: product } = useSuspenseQuery({
+    queryKey: ["product", handle],
+    queryFn: () => getProduct(handle),
+  });
 
   const addItem = useCartStore((state) => state.addItem);
   const isLoading = useCartStore((state) => state.isLoading);

@@ -6,8 +6,16 @@ import {
   updateShopifyCartLine,
   removeLineFromShopifyCart,
   getShopifyCart,
+  addSimpleLineToCart,
+  updateShopifyCartAttributes,
   type ShopifyProduct,
 } from "@/lib/shopify";
+import {
+  DELIVERY_ZONES,
+  PICKUP_INFO,
+  getZoneByVariantId,
+  type FulfillmentMethod,
+} from "@/lib/fulfillment";
 
 export interface CartItem {
   lineId: string | null;
@@ -25,6 +33,11 @@ interface CartStore {
   checkoutUrl: string | null;
   isLoading: boolean;
   isSyncing: boolean;
+  fulfillmentMethod: FulfillmentMethod;
+  deliveryZoneVariantId: string | null;
+  deliveryLineId: string | null;
+  setFulfillment: (method: FulfillmentMethod, zoneVariantId?: string | null) => Promise<void>;
+  getDeliveryFee: () => number;
   addItem: (item: Omit<CartItem, "lineId">) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
@@ -41,6 +54,62 @@ export const useCartStore = create<CartStore>()(
       checkoutUrl: null,
       isLoading: false,
       isSyncing: false,
+      fulfillmentMethod: "pickup",
+      deliveryZoneVariantId: null,
+      deliveryLineId: null,
+
+      getDeliveryFee: () => {
+        const { fulfillmentMethod, deliveryZoneVariantId } = get();
+        if (fulfillmentMethod !== "delivery") return PICKUP_INFO.fee;
+        return getZoneByVariantId(deliveryZoneVariantId)?.fee ?? 0;
+      },
+
+      setFulfillment: async (method, zoneVariantId = null) => {
+        const { cartId, deliveryLineId, clearCart } = get();
+        const zone = method === "delivery" ? getZoneByVariantId(zoneVariantId) ?? DELIVERY_ZONES[0] : null;
+
+        set({
+          fulfillmentMethod: method,
+          deliveryZoneVariantId: zone?.variantId ?? null,
+          isLoading: Boolean(cartId),
+        });
+
+        if (!cartId) return;
+
+        try {
+          // Remove any existing delivery fee line first
+          if (deliveryLineId) {
+            const removed = await removeLineFromShopifyCart(cartId, deliveryLineId);
+            if (removed.cartNotFound) {
+              clearCart();
+              return;
+            }
+            set({ deliveryLineId: null });
+          }
+
+          if (zone) {
+            const added = await addSimpleLineToCart(cartId, zone.variantId, 1);
+            if (added.cartNotFound) {
+              clearCart();
+              return;
+            }
+            if (added.success) set({ deliveryLineId: added.lineId ?? null });
+          }
+
+          await updateShopifyCartAttributes(cartId, [
+            { key: "Fulfillment", value: zone ? "Delivery" : "Pickup" },
+            {
+              key: zone ? "Delivery zone" : "Pickup location",
+              value: zone ? `${zone.label} (${zone.area})` : PICKUP_INFO.address,
+            },
+            { key: "Estimated time", value: zone ? zone.eta : PICKUP_INFO.eta },
+          ]);
+        } catch (error) {
+          console.error("Failed to update fulfillment option:", error);
+        } finally {
+          set({ isLoading: false });
+        }
+      },
 
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
@@ -55,7 +124,12 @@ export const useCartStore = create<CartStore>()(
                 cartId: result.cartId,
                 checkoutUrl: result.checkoutUrl,
                 items: [{ ...item, lineId: result.lineId }],
+                deliveryLineId: null,
               });
+              const { fulfillmentMethod, deliveryZoneVariantId } = get();
+              if (fulfillmentMethod === "delivery") {
+                await get().setFulfillment("delivery", deliveryZoneVariantId);
+              }
             }
           } else if (existingItem) {
             const newQuantity = existingItem.quantity + item.quantity;
@@ -142,7 +216,15 @@ export const useCartStore = create<CartStore>()(
         }
       },
 
-      clearCart: () => set({ items: [], cartId: null, checkoutUrl: null }),
+      clearCart: () =>
+        set({
+          items: [],
+          cartId: null,
+          checkoutUrl: null,
+          deliveryLineId: null,
+          deliveryZoneVariantId: null,
+          fulfillmentMethod: "pickup",
+        }),
       getCheckoutUrl: () => get().checkoutUrl,
 
       syncCart: async () => {
@@ -167,6 +249,9 @@ export const useCartStore = create<CartStore>()(
         items: state.items,
         cartId: state.cartId,
         checkoutUrl: state.checkoutUrl,
+        fulfillmentMethod: state.fulfillmentMethod,
+        deliveryZoneVariantId: state.deliveryZoneVariantId,
+        deliveryLineId: state.deliveryLineId,
       }),
     },
   ),

@@ -41,7 +41,7 @@ function CustomOrdersPage() {
         </p>
       </div>
 
-      <form className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
+      <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="name">Your Name</Label>

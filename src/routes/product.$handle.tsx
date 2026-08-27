@@ -1,5 +1,4 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ShoppingBag, Minus, Plus } from "lucide-react";
@@ -23,23 +22,17 @@ export const Route = createFileRoute("/product/$handle")({
       queryFn: () => fetchProductByHandle(params.handle),
     });
     if (!product) throw notFound();
-    return product;
+    return product as NonNullable<ShopifyProduct["node"]>;
   },
   component: ProductDetailPage,
 });
 
 function ProductDetailPage() {
-  const { handle } = Route.useParams();
-  const { data: product } = useSuspenseQuery<ShopifyProduct["node"]>({
-    queryKey: ["product", handle],
-    queryFn: () => fetchProductByHandle(handle),
-  });
+  const product = Route.useLoaderData();
 
   const addItem = useCartStore((state) => state.addItem);
   const isLoading = useCartStore((state) => state.isLoading);
   const [quantity, setQuantity] = useState(1);
-
-  if (!product) throw notFound();
 
   const variant = product.variants.edges[0]?.node;
   const image = product.images.edges[0]?.node;

@@ -124,7 +124,12 @@ export const useCartStore = create<CartStore>()(
                 cartId: result.cartId,
                 checkoutUrl: result.checkoutUrl,
                 items: [{ ...item, lineId: result.lineId }],
+                deliveryLineId: null,
               });
+              const { fulfillmentMethod, deliveryZoneVariantId } = get();
+              if (fulfillmentMethod === "delivery") {
+                await get().setFulfillment("delivery", deliveryZoneVariantId);
+              }
             }
           } else if (existingItem) {
             const newQuantity = existingItem.quantity + item.quantity;

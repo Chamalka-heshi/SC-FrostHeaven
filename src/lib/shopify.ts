@@ -178,8 +178,11 @@ export async function storefrontApiRequest(query: string, variables: Record<stri
 
 export async function fetchProducts(first = 100, query?: string): Promise<ShopifyProduct[]> {
   const data = await storefrontApiRequest(STOREFRONT_QUERY, { first, query: query ?? null });
-  return data?.data?.products?.edges ?? [];
+  const edges: ShopifyProduct[] = data?.data?.products?.edges ?? [];
+  // The "Delivery" product is a checkout fee item, not a cake — never list it.
+  return edges.filter((edge) => edge.node.handle !== "delivery");
 }
+
 
 export async function fetchProductByHandle(handle: string): Promise<ShopifyProduct["node"] | null> {
   const data = await storefrontApiRequest(PRODUCT_BY_HANDLE_QUERY, { handle });

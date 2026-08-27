@@ -28,7 +28,7 @@ export const Route = createFileRoute("/product/$handle")({
 });
 
 function ProductDetailPage() {
-  const product = Route.useLoaderData();
+  const product = Route.useLoaderData()!;
 
   const addItem = useCartStore((state) => state.addItem);
   const isLoading = useCartStore((state) => state.isLoading);

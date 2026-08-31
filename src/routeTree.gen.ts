@@ -13,8 +13,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CustomOrdersRouteImport } from './routes/custom-orders'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as MenuRouteImport } from './routes/menu'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as TestimonialsRouteImport } from './routes/testimonials'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ProductHandleRouteImport } from './routes/product.$handle'
 
 const IndexRoute = IndexRouteImport.update({
@@ -37,14 +42,39 @@ const CustomOrdersRoute = CustomOrdersRouteImport.update({
   path: '/custom-orders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MenuRoute = MenuRouteImport.update({
   id: '/menu',
   path: '/menu',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TestimonialsRoute = TestimonialsRouteImport.update({
   id: '/testimonials',
   path: '/testimonials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductHandleRoute = ProductHandleRouteImport.update({
@@ -58,8 +88,13 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
   '/custom-orders': typeof CustomOrdersRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
+  '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
 }
 export interface FileRoutesByTo {
@@ -67,8 +102,13 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
   '/custom-orders': typeof CustomOrdersRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
+  '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
 }
 export interface FileRoutesById {
@@ -77,8 +117,13 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
   '/custom-orders': typeof CustomOrdersRoute
+  '/forgot-password': typeof ForgotPasswordRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
+  '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
 }
 export interface FileRouteTypes {
@@ -88,8 +133,13 @@ export interface FileRouteTypes {
     | '/about'
     | '/contact'
     | '/custom-orders'
+    | '/forgot-password'
+    | '/login'
     | '/menu'
+    | '/register'
+    | '/reset-password'
     | '/testimonials'
+    | '/auth/callback'
     | '/product/$handle'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,8 +147,13 @@ export interface FileRouteTypes {
     | '/about'
     | '/contact'
     | '/custom-orders'
+    | '/forgot-password'
+    | '/login'
     | '/menu'
+    | '/register'
+    | '/reset-password'
     | '/testimonials'
+    | '/auth/callback'
     | '/product/$handle'
   id:
     | '__root__'
@@ -106,8 +161,13 @@ export interface FileRouteTypes {
     | '/about'
     | '/contact'
     | '/custom-orders'
+    | '/forgot-password'
+    | '/login'
     | '/menu'
+    | '/register'
+    | '/reset-password'
     | '/testimonials'
+    | '/auth/callback'
     | '/product/$handle'
   fileRoutesById: FileRoutesById
 }
@@ -116,8 +176,13 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   ContactRoute: typeof ContactRoute
   CustomOrdersRoute: typeof CustomOrdersRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
+  LoginRoute: typeof LoginRoute
   MenuRoute: typeof MenuRoute
+  RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   TestimonialsRoute: typeof TestimonialsRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   ProductHandleRoute: typeof ProductHandleRoute
 }
 
@@ -151,6 +216,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomOrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/menu': {
       id: '/menu'
       path: '/menu'
@@ -158,11 +237,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MenuRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/testimonials': {
       id: '/testimonials'
       path: '/testimonials'
       fullPath: '/testimonials'
       preLoaderRoute: typeof TestimonialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/product/$handle': {
@@ -180,8 +280,13 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   ContactRoute: ContactRoute,
   CustomOrdersRoute: CustomOrdersRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
+  LoginRoute: LoginRoute,
   MenuRoute: MenuRoute,
+  RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   TestimonialsRoute: TestimonialsRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   ProductHandleRoute: ProductHandleRoute,
 }
 export const routeTree = rootRouteImport

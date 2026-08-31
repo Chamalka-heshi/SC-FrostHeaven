@@ -6,7 +6,7 @@ import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
 export const Route = createFileRoute("/menu")({
   head: () => ({
     meta: [
-      { title: "Menu — SC Frost Heaven" },
+      { title: "Menu —SC Frost Heaven" },
       {
         name: "description",
         content: "Browse our handcrafted cakes, cupcakes, and desserts available for online ordering.",

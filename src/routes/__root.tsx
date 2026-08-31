@@ -197,10 +197,14 @@ function Header() {
               </div>
             ) : user ? (
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-full bg-secondary/80 px-3.5 py-1.5 text-xs font-medium text-foreground shadow-xs">
+                <Link
+                  to="/account"
+                  className="flex items-center gap-1.5 rounded-full bg-secondary/80 px-3.5 py-1.5 text-xs font-medium text-foreground shadow-xs hover:bg-secondary transition-colors"
+                  title="My Account & Orders"
+                >
                   <User className="h-3.5 w-3.5 text-primary" />
                   <span className="max-w-[120px] truncate">{displayName}</span>
-                </div>
+                </Link>
                 <button
                   type="button"
                   onClick={handleSignOut}
@@ -266,10 +270,14 @@ function Header() {
                 </div>
               ) : user ? (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm text-foreground font-medium py-1">
+                  <Link
+                    to="/account"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-2 text-sm text-foreground font-medium py-1 hover:text-primary transition-colors"
+                  >
                     <User className="h-4 w-4 text-primary" />
-                    <span>{displayName}</span>
-                  </div>
+                    <span>{displayName} (My Account)</span>
+                  </Link>
                   <button
                     type="button"
                     onClick={handleSignOut}

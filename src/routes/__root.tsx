@@ -10,7 +10,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { User, LogOut, Menu, X, Loader2 } from "lucide-react";
+import { User, LogOut, Menu, X, Loader2, Shield } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 
 import appCss from "../styles.css?url";
@@ -197,6 +197,16 @@ function Header() {
               </div>
             ) : user ? (
               <div className="flex items-center gap-2">
+                {profile?.role === "admin" && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/25 px-3 py-1.5 text-xs font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors"
+                    title="Administrator Dashboard"
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    <span>Admin Panel</span>
+                  </Link>
+                )}
                 <Link
                   to="/account"
                   className="flex items-center gap-1.5 rounded-full bg-secondary/80 px-3.5 py-1.5 text-xs font-medium text-foreground shadow-xs hover:bg-secondary transition-colors"
@@ -270,6 +280,16 @@ function Header() {
                 </div>
               ) : user ? (
                 <div className="space-y-3">
+                  {profile?.role === "admin" && (
+                    <Link
+                      to="/admin"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-2 text-sm font-semibold text-primary py-1 border-b border-border/40 pb-2.5"
+                    >
+                      <Shield className="h-4 w-4 text-primary" />
+                      <span>Admin Dashboard</span>
+                    </Link>
+                  )}
                   <Link
                     to="/account"
                     onClick={() => setMobileMenuOpen(false)}

@@ -235,30 +235,30 @@ function AccountPage() {
             Submitted
           </span>
         );
-      case "reviewed":
+      case "under_review":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 border border-indigo-500/20">
-            Reviewed
+            Under Review
           </span>
         );
-      case "quote_sent":
+      case "quoted":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 border border-sky-500/20">
-            Quote Sent
+            Quoted
           </span>
         );
-      case "confirmed":
+      case "accepted":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-500/20">
             <CheckCircle2 className="h-3 w-3" />
-            Confirmed
+            Accepted
           </span>
         );
-      case "in_progress":
+      case "in_baking":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-700 border border-purple-500/20">
             <Clock className="h-3 w-3" />
-            In Progress
+            In Baking
           </span>
         );
       case "ready":
@@ -267,7 +267,6 @@ function AccountPage() {
             Ready
           </span>
         );
-      case "delivered":
       case "completed":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-500/20">
@@ -275,9 +274,16 @@ function AccountPage() {
             Completed
           </span>
         );
-      case "cancelled":
+      case "declined":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-700 border border-rose-500/20">
+            <AlertCircle className="h-3 w-3" />
+            Declined
+          </span>
+        );
+      case "cancelled":
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-700 border border-zinc-500/20">
             <AlertCircle className="h-3 w-3" />
             Cancelled
           </span>

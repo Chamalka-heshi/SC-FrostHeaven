@@ -31,9 +31,13 @@ import {
   ChefHat,
   BadgePercent,
   XCircle,
+  Printer,
+  SlidersHorizontal,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { KitchenProductionView } from "@/components/kitchen-production-view";
+import { KitchenProductionTicket } from "@/components/kitchen-production-ticket";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () => ({
@@ -101,7 +105,10 @@ function AdminOrdersPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  // Search & Filter state
+  // View Mode: Table vs Kitchen Production
+  const [activeViewMode, setActiveViewMode] = useState<"table" | "kitchen">("table");
+
+  // Search & Filter state (for Table mode)
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [eventTypeFilter, setEventTypeFilter] = useState("all");
@@ -118,6 +125,11 @@ function AdminOrdersPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [customerAddress, setCustomerAddress] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+
+  // Kitchen Quick Actions & Ticket Printing state
+  const [ticketOrder, setTicketOrder] = useState<CustomOrder | null>(null);
+  const [ticketImages, setTicketImages] = useState<OrderImage[]>([]);
+  const [updatingKitchenOrderId, setUpdatingKitchenOrderId] = useState<string | null>(null);
 
   // 1. Admin Role Security Guard
   useEffect(() => {
@@ -167,78 +179,91 @@ function AdminOrdersPage() {
     }
   }, [profile, fetchOrders]);
 
-  // 3. Dynamic Event Types Extracted from Real Orders
-  const availableEventTypes = useMemo(() => {
-    const types = new Set<string>();
-    orders.forEach((o) => {
-      if (o.event_type) types.add(o.event_type.trim());
-    });
-    return Array.from(types).sort();
-  }, [orders]);
-
-  // 4. Real Metrics Counts (Calculated dynamically from real enum values)
+  // 3. Derived Metrics for Admin Overview
   const metrics = useMemo(() => {
     const total = orders.length;
     const submitted = orders.filter((o) => o.status === "submitted").length;
-    const accepted = orders.filter((o) => o.status === "accepted").length;
-    const inBaking = orders.filter((o) => o.status === "in_baking").length;
-    const completed = orders.filter((o) => o.status === "completed").length;
     const underReview = orders.filter((o) => o.status === "under_review").length;
     const quoted = orders.filter((o) => o.status === "quoted").length;
+    const accepted = orders.filter((o) => o.status === "accepted").length;
+    const inBaking = orders.filter((o) => o.status === "in_baking").length;
     const ready = orders.filter((o) => o.status === "ready").length;
+    const completed = orders.filter((o) => o.status === "completed").length;
     const declined = orders.filter((o) => o.status === "declined").length;
     const cancelled = orders.filter((o) => o.status === "cancelled").length;
 
     return {
       total,
       submitted,
-      accepted,
-      inBaking,
-      completed,
       underReview,
       quoted,
+      accepted,
+      inBaking,
       ready,
+      completed,
       declined,
       cancelled,
     };
   }, [orders]);
 
-  // 5. Client-Side Real-Time Filter & Search
+  // 4. Distinct Event Types for Filter Dropdown
+  const availableEventTypes = useMemo(() => {
+    const set = new Set<string>();
+    orders.forEach((o) => {
+      if (o.event_type) set.add(o.event_type);
+    });
+    return Array.from(set).sort();
+  }, [orders]);
+
+  // 5. Filter & Sort Orders for Table View
   const filteredOrders = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const query = searchQuery.toLowerCase().trim();
 
     return orders
       .filter((order) => {
-        // Search filter
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase().trim();
-          const shortId = order.id.toLowerCase().slice(0, 8);
-          const nameMatch = order.customer_name.toLowerCase().includes(query);
-          const emailMatch = order.customer_email.toLowerCase().includes(query);
-          const eventMatch = order.event_type.toLowerCase().includes(query);
-          const idMatch = order.id.toLowerCase().includes(query) || shortId.includes(query.replace(/^#/, ""));
-
-          if (!nameMatch && !emailMatch && !eventMatch && !idMatch) {
-            return false;
-          }
-        }
-
         // Status filter
         if (statusFilter !== "all" && order.status !== statusFilter) {
           return false;
         }
 
-        // Event Type filter
-        if (eventTypeFilter !== "all" && order.event_type.toLowerCase() !== eventTypeFilter.toLowerCase()) {
+        // Event type filter
+        if (eventTypeFilter !== "all" && order.event_type !== eventTypeFilter) {
           return false;
         }
 
         // Date filter
-        if (dateFilter !== "all") {
-          const eventDate = new Date(order.event_date);
-          if (dateFilter === "upcoming" && eventDate < today) return false;
-          if (dateFilter === "past" && eventDate >= today) return false;
+        if (dateFilter === "upcoming" && order.event_date < todayStr) {
+          return false;
+        }
+        if (dateFilter === "past" && order.event_date >= todayStr) {
+          return false;
+        }
+
+        // Search query
+        if (query) {
+          const nameMatch = order.customer_name?.toLowerCase().includes(query);
+          const emailMatch = order.customer_email?.toLowerCase().includes(query);
+          const phoneMatch = order.customer_phone?.toLowerCase().includes(query);
+          const idMatch = order.id.toLowerCase().includes(query);
+          const shortIdMatch = `#${order.id.slice(0, 8).toLowerCase()}`.includes(query);
+          const eventMatch = order.event_type?.toLowerCase().includes(query);
+          const detailsMatch = order.cake_details?.toLowerCase().includes(query);
+          const notesMatch = order.admin_notes?.toLowerCase().includes(query);
+
+          if (
+            !nameMatch &&
+            !emailMatch &&
+            !phoneMatch &&
+            !idMatch &&
+            !shortIdMatch &&
+            !eventMatch &&
+            !detailsMatch &&
+            !notesMatch
+          ) {
+            return false;
+          }
         }
 
         return true;
@@ -269,7 +294,6 @@ function AdminOrdersPage() {
     setLoadingImages(true);
 
     try {
-      // 1. Fetch customer profile address if customer_id exists
       if (order.customer_id) {
         const { data: profData } = await supabase
           .from("profiles")
@@ -287,7 +311,6 @@ function AdminOrdersPage() {
         setCustomerAddress("Guest Order (No saved profile address)");
       }
 
-      // 2. Fetch reference images & generate signed URLs from private 'cake-references' bucket
       const { data: imagesData, error: imagesError } = await supabase
         .from("custom_order_images")
         .select("id, order_id, storage_path, file_name, file_size_bytes, created_at")
@@ -300,7 +323,7 @@ function AdminOrdersPage() {
           imagesData.map(async (img) => {
             const { data: signedData, error: signedError } = await supabase.storage
               .from("cake-references")
-              .createSignedUrl(img.storage_path, 3600); // 1 hour expiration
+              .createSignedUrl(img.storage_path, 3600);
 
             if (signedError) {
               console.warn(`Could not generate signed URL for ${img.file_name}:`, signedError);
@@ -335,7 +358,6 @@ function AdminOrdersPage() {
 
       if (error) throw error;
 
-      // Update state locally
       const updatedOrder = { ...selectedOrder, status: newStatus, updated_at: new Date().toISOString() };
       setSelectedOrder(updatedOrder);
       setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
@@ -344,13 +366,47 @@ function AdminOrdersPage() {
       toast.success(`Order status updated to ${label}`);
     } catch (err: any) {
       console.error("Status update error:", err);
-      toast.error(err.message || "Failed to update order status. Check permissions.");
+      toast.error(err.message || "Failed to update order status.");
     } finally {
       setIsUpdatingStatus(false);
     }
   };
 
-  // 8. Save Administrator Notes
+  // 8. Quick Kitchen Status Progression Action
+  const handleQuickUpdateStatus = async (orderId: string, nextStatus: string) => {
+    setUpdatingKitchenOrderId(orderId);
+    try {
+      const { error } = await supabase
+        .from("custom_orders")
+        .update({
+          status: nextStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId);
+
+      if (error) throw error;
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: nextStatus, updated_at: new Date().toISOString() } : o
+        )
+      );
+
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: nextStatus, updated_at: new Date().toISOString() });
+      }
+
+      const label = ORDER_STATUSES.find((s) => s.value === nextStatus)?.label || nextStatus;
+      toast.success(`Kitchen stage updated to ${label}`);
+    } catch (err: any) {
+      console.error("Quick status update error:", err);
+      toast.error(err.message || "Failed to update kitchen status.");
+    } finally {
+      setUpdatingKitchenOrderId(null);
+    }
+  };
+
+  // 9. Save Administrator Notes
   const handleSaveNotes = async () => {
     if (!selectedOrder || isSavingNotes) return;
     setIsSavingNotes(true);
@@ -377,6 +433,33 @@ function AdminOrdersPage() {
       toast.error(err.message || "Failed to save admin notes.");
     } finally {
       setIsSavingNotes(false);
+    }
+  };
+
+  // 10. Open Kitchen Ticket for Printing
+  const handleOpenTicket = async (order: CustomOrder) => {
+    setTicketOrder(order);
+    setTicketImages([]);
+
+    try {
+      const { data: imagesData } = await supabase
+        .from("custom_order_images")
+        .select("id, order_id, storage_path, file_name, file_size_bytes, created_at")
+        .eq("order_id", order.id);
+
+      if (imagesData && imagesData.length > 0) {
+        const signedImages = await Promise.all(
+          imagesData.map(async (img) => {
+            const { data: signedData } = await supabase.storage
+              .from("cake-references")
+              .createSignedUrl(img.storage_path, 3600);
+            return { ...img, signedUrl: signedData?.signedUrl ?? null };
+          })
+        );
+        setTicketImages(signedImages);
+      }
+    } catch (err) {
+      console.warn("Could not load ticket images:", err);
     }
   };
 
@@ -450,7 +533,7 @@ function AdminOrdersPage() {
       case "cancelled":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-700 border border-zinc-500/20">
-            <AlertCircle className="h-3 w-3" />
+            <XCircle className="h-3 w-3" />
             Cancelled
           </span>
         );
@@ -466,36 +549,32 @@ function AdminOrdersPage() {
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "N/A";
     try {
+      const date = new Date(dateStr);
       return new Intl.DateTimeFormat("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
-      }).format(new Date(dateStr));
+      }).format(date);
     } catch {
       return dateStr;
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (!bytes) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
-
-  if (authLoading || !user || !profile || profile.role !== "admin") {
+  if (authLoading || (!profile && user)) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex h-96 items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Authenticating admin access...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      {/* 1. Header & Controls */}
-      <div className="flex flex-col gap-4 rounded-3xl bg-card p-6 shadow-soft border border-border/70 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+    <div className="space-y-8">
+      {/* 1. Header Toolbar with Mode Switcher */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blush text-primary shadow-xs">
@@ -504,13 +583,40 @@ function AdminOrdersPage() {
             <div>
               <h1 className="text-2xl font-medium text-foreground sm:text-3xl">Custom Orders</h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Manage customer cake requests, workflow status, references, and notes.
+                Manage customer cake requests, kitchen production schedule, tickets, and status.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* View Mode Toggle Switcher */}
+          <div className="flex items-center rounded-full bg-secondary/80 p-1 border border-border/70 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setActiveViewMode("table")}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                activeViewMode === "table"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Orders Table
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveViewMode("kitchen")}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeViewMode === "kitchen"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <ChefHat className="h-3.5 w-3.5" />
+              <span>Kitchen Production</span>
+            </button>
+          </div>
+
           <Button
             variant="outline"
             onClick={() => fetchOrders(true)}
@@ -518,223 +624,208 @@ function AdminOrdersPage() {
             className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
-            <span>{isRefreshing ? "Refreshing..." : "Refresh Orders"}</span>
+            <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
         </div>
       </div>
 
-      {/* 2. Order Metric Summary Cards (Live real data) */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {/* Total */}
-        <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Total Orders</span>
-            <p className="text-2xl font-bold text-foreground mt-1">{metrics.total}</p>
-          </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary text-foreground">
-            <Cake className="h-5 w-5 text-primary" />
-          </div>
-        </div>
+      {/* MODE 1: KITCHEN PRODUCTION VIEW */}
+      {activeViewMode === "kitchen" && (
+        <KitchenProductionView
+          orders={orders}
+          onUpdateStatus={handleQuickUpdateStatus}
+          onOpenOrder={handleOpenOrderDetails}
+          onPrintTicket={handleOpenTicket}
+          updatingOrderId={updatingKitchenOrderId}
+        />
+      )}
 
-        {/* Submitted */}
-        <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Submitted</span>
-            <p className="text-2xl font-bold text-amber-700 mt-1">{metrics.submitted}</p>
-          </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
-            <Sparkles className="h-5 w-5" />
-          </div>
-        </div>
+      {/* MODE 2: STANDARD ORDERS TABLE VIEW */}
+      {activeViewMode === "table" && (
+        <div className="space-y-8">
+          {/* 2. Order Metric Summary Cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Total Orders</span>
+                <p className="text-2xl font-bold text-foreground mt-1">{metrics.total}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary text-foreground">
+                <Cake className="h-5 w-5 text-primary" />
+              </div>
+            </div>
 
-        {/* Accepted */}
-        <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Accepted</span>
-            <p className="text-2xl font-bold text-blue-700 mt-1">{metrics.accepted}</p>
-          </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600">
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-        </div>
+            <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Submitted</span>
+                <p className="text-2xl font-bold text-amber-700 mt-1">{metrics.submitted}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
+                <Sparkles className="h-5 w-5" />
+              </div>
+            </div>
 
-        {/* In Baking */}
-        <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">In Baking</span>
-            <p className="text-2xl font-bold text-purple-700 mt-1">{metrics.inBaking}</p>
-          </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-600">
-            <ChefHat className="h-5 w-5" />
-          </div>
-        </div>
+            <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Accepted</span>
+                <p className="text-2xl font-bold text-blue-700 mt-1">{metrics.accepted}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+            </div>
 
-        {/* Completed */}
-        <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground">Completed</span>
-            <p className="text-2xl font-bold text-emerald-700 mt-1">{metrics.completed}</p>
-          </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-        </div>
-      </div>
+            <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">In Baking</span>
+                <p className="text-2xl font-bold text-purple-700 mt-1">{metrics.inBaking}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-600">
+                <ChefHat className="h-5 w-5" />
+              </div>
+            </div>
 
-      {/* 3. Search, Filters & Sorting Bar */}
-      <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/60 space-y-4">
-        <div className="grid gap-3 md:grid-cols-4">
-          {/* Search Input */}
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by customer name, email, #order ID, event..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="rounded-2xl pl-10 bg-secondary/20 border-border/70"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Status Filter */}
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="all">All Statuses ({orders.length})</option>
-              {ORDER_STATUSES.map((st) => (
-                <option key={st.value} value={st.value}>
-                  {st.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Event Type Filter */}
-          <div>
-            <select
-              value={eventTypeFilter}
-              onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="all">All Event Types</option>
-              {availableEventTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Date Filter & Sorting Row */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border/40 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground flex items-center gap-1 font-medium">
-              <Filter className="h-3.5 w-3.5" /> Date:
-            </span>
-            <div className="flex rounded-full bg-secondary/40 p-0.5">
-              <button
-                type="button"
-                onClick={() => setDateFilter("all")}
-                className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                  dateFilter === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All Dates
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilter("upcoming")}
-                className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                  dateFilter === "upcoming" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Upcoming
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilter("past")}
-                className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                  dateFilter === "past" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Past
-              </button>
+            <div className="flex items-center justify-between rounded-3xl bg-card p-5 shadow-soft border border-border/60">
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Completed</span>
+                <p className="text-2xl font-bold text-emerald-700 mt-1">{metrics.completed}</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground flex items-center gap-1 font-medium">
-              <ArrowUpDown className="h-3.5 w-3.5" /> Sort:
-            </span>
-            <select
-              value={sortOption}
-              onChange={(e) => setSortOption(e.target.value as any)}
-              className="rounded-xl border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none"
-            >
-              <option value="newest">Newest Orders First</option>
-              <option value="oldest">Oldest Orders First</option>
-              <option value="date_asc">Event Date (Soonest First)</option>
-              <option value="date_desc">Event Date (Furthest First)</option>
-            </select>
-          </div>
-        </div>
-      </div>
+          {/* 3. Search, Filters & Sorting Bar */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/60 space-y-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="relative md:col-span-2">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by customer name, email, #order ID, event..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="rounded-2xl pl-10 bg-secondary/20 border-border/70"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
 
-      {/* 4. Orders List (Desktop Table & Mobile Cards) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Showing {filteredOrders.length} of {orders.length} custom orders
-          </span>
-        </div>
+              <div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="all">All Statuses ({orders.length})</option>
+                  {ORDER_STATUSES.map((st) => (
+                    <option key={st.value} value={st.value}>
+                      {st.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-        {loadingOrders ? (
-          <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-20 shadow-soft border border-border/60">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-            <p className="text-sm text-muted-foreground">Loading custom cake orders from Supabase...</p>
-          </div>
-        ) : ordersError ? (
-          <div className="rounded-3xl bg-destructive/10 p-8 text-center shadow-soft border border-destructive/20">
-            <AlertCircle className="mx-auto h-8 w-8 text-destructive mb-2" />
-            <p className="text-sm font-medium text-destructive">{ordersError}</p>
-            <Button
-              variant="outline"
-              onClick={() => fetchOrders()}
-              className="mt-4 rounded-full border-destructive/30 text-destructive cursor-pointer"
-            >
-              Try Again
-            </Button>
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <div className="rounded-3xl bg-card p-12 text-center shadow-soft border border-border/60 space-y-4">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
-              <Inbox className="h-7 w-7" />
+              <div>
+                <select
+                  value={eventTypeFilter}
+                  onChange={(e) => setEventTypeFilter(e.target.value)}
+                  className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="all">All Event Types</option>
+                  {availableEventTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="space-y-1">
-              <h3 className="text-lg font-medium text-foreground">
-                {searchQuery || statusFilter !== "all" || eventTypeFilter !== "all" || dateFilter !== "all"
-                  ? "No matching orders found"
-                  : "No custom orders yet"}
-              </h3>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border/40 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground flex items-center gap-1 font-medium">
+                  <Filter className="h-3.5 w-3.5" /> Date:
+                </span>
+                <div className="flex rounded-full bg-secondary/40 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter("all")}
+                    className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
+                      dateFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    All Dates
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter("upcoming")}
+                    className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
+                      dateFilter === "upcoming" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    Upcoming
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter("past")}
+                    className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
+                      dateFilter === "past" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    Past
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground flex items-center gap-1 font-medium">
+                  <ArrowUpDown className="h-3.5 w-3.5" /> Sort:
+                </span>
+                <select
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value as any)}
+                  className="rounded-xl border border-border/60 bg-transparent px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none"
+                >
+                  <option value="newest">Order Date: Newest First</option>
+                  <option value="oldest">Order Date: Oldest First</option>
+                  <option value="date_asc">Event Date: Earliest First</option>
+                  <option value="date_desc">Event Date: Latest First</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Orders Data Table */}
+          {loadingOrders ? (
+            <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-20 shadow-soft">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm text-muted-foreground">Loading custom cake orders from Supabase...</p>
+            </div>
+          ) : ordersError ? (
+            <div className="rounded-3xl bg-destructive/10 p-8 text-center shadow-soft">
+              <AlertCircle className="mx-auto h-8 w-8 text-destructive mb-2" />
+              <p className="text-sm font-medium text-destructive">{ordersError}</p>
+              <Button variant="outline" onClick={() => fetchOrders(true)} className="mt-4 rounded-full">
+                Try Again
+              </Button>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="rounded-3xl bg-card p-12 text-center shadow-soft space-y-3">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                <Inbox className="h-7 w-7" />
+              </div>
+              <h3 className="text-lg font-medium text-foreground">No custom orders found</h3>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                {searchQuery || statusFilter !== "all" || eventTypeFilter !== "all" || dateFilter !== "all"
-                  ? "Try resetting your search query or filter settings to view more orders."
-                  : "Customer custom cake requests will appear here once submitted."}
+                No orders match your active filter settings. Try clearing search keywords or resetting status filters.
               </p>
-            </div>
-            {(searchQuery || statusFilter !== "all" || eventTypeFilter !== "all" || dateFilter !== "all") && (
               <Button
                 variant="outline"
                 size="sm"
@@ -744,379 +835,300 @@ function AdminOrdersPage() {
                   setEventTypeFilter("all");
                   setDateFilter("all");
                 }}
-                className="rounded-full text-xs cursor-pointer"
+                className="rounded-full text-xs"
               >
-                Clear All Filters
+                Reset All Filters
               </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* DESKTOP DATA TABLE */}
-            <div className="hidden lg:block overflow-hidden rounded-3xl bg-card shadow-soft border border-border/70">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-border/60 bg-muted/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <th className="py-4 pl-6 pr-3">Order</th>
-                    <th className="py-4 px-3">Customer</th>
-                    <th className="py-4 px-3">Event</th>
-                    <th className="py-4 px-3">Event Date</th>
-                    <th className="py-4 px-3">Submitted</th>
-                    <th className="py-4 px-3">Status</th>
-                    <th className="py-4 pl-3 pr-6 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40 text-sm">
-                  {filteredOrders.map((order) => (
-                    <tr
-                      key={order.id}
-                      className="group transition-colors hover:bg-secondary/20"
-                    >
-                      <td className="py-4 pl-6 pr-3 font-mono text-xs font-semibold text-foreground">
-                        #{order.id.slice(0, 8)}
-                      </td>
-                      <td className="py-4 px-3">
-                        <div className="font-medium text-foreground">{order.customer_name}</div>
-                        <div className="text-xs text-muted-foreground truncate max-w-[180px]">
-                          {order.customer_email}
-                        </div>
-                      </td>
-                      <td className="py-4 px-3 font-medium text-foreground">
-                        {order.event_type}
-                      </td>
-                      <td className="py-4 px-3">
-                        <div className="flex items-center gap-1.5 text-xs text-foreground font-medium">
-                          <Calendar className="h-3.5 w-3.5 text-primary" />
-                          {formatDate(order.event_date)}
-                        </div>
-                      </td>
-                      <td className="py-4 px-3 text-xs text-muted-foreground">
-                        {formatDate(order.created_at)}
-                      </td>
-                      <td className="py-4 px-3">
-                        {renderStatusBadge(order.status)}
-                      </td>
-                      <td className="py-4 pl-3 pr-6 text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleOpenOrderDetails(order)}
-                          className="rounded-full text-xs hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer"
-                        >
-                          <span>View Details</span>
-                        </Button>
-                      </td>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-3xl bg-card shadow-soft border border-border/70">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-border/60 bg-muted/30 text-muted-foreground uppercase tracking-wider font-semibold">
+                    <tr>
+                      <th className="py-4 px-6">Order ID</th>
+                      <th className="py-4 px-6">Customer</th>
+                      <th className="py-4 px-6">Event Type</th>
+                      <th className="py-4 px-6">Event Date</th>
+                      <th className="py-4 px-6">Status</th>
+                      <th className="py-4 px-6">Created</th>
+                      <th className="py-4 px-6 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {filteredOrders.map((order) => (
+                      <tr
+                        key={order.id}
+                        onClick={() => handleOpenOrderDetails(order)}
+                        className="group hover:bg-secondary/30 transition-colors cursor-pointer"
+                      >
+                        <td className="py-4 px-6 font-mono font-medium text-foreground">
+                          <span className="rounded-lg bg-secondary px-2 py-1">
+                            #{order.id.slice(0, 8)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          <p className="font-semibold text-foreground">{order.customer_name}</p>
+                          <p className="text-[11px] text-muted-foreground">{order.customer_email}</p>
+                        </td>
+                        <td className="py-4 px-6 font-medium text-foreground">
+                          {order.event_type}
+                        </td>
+                        <td className="py-4 px-6">
+                          <span className="flex items-center gap-1 font-medium text-foreground">
+                            <Calendar className="h-3.5 w-3.5 text-primary" />
+                            {formatDate(order.event_date)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6">
+                          {renderStatusBadge(order.status)}
+                        </td>
+                        <td className="py-4 px-6 text-muted-foreground">
+                          {formatDate(order.created_at)}
+                        </td>
+                        <td className="py-4 px-6 text-right">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenOrderDetails(order);
+                            }}
+                            className="rounded-full text-xs group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                          >
+                            Manage
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          )}
+        </div>
+      )}
 
-            {/* MOBILE RESPONSIVE ORDER CARDS */}
-            <div className="grid gap-4 lg:hidden">
-              {filteredOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 space-y-3.5"
-                >
-                  <div className="flex items-center justify-between border-b border-border/40 pb-3">
-                    <span className="font-mono text-xs font-semibold text-foreground">
-                      #{order.id.slice(0, 8)}
-                    </span>
-                    {renderStatusBadge(order.status)}
-                  </div>
-
-                  <div className="space-y-1">
-                    <h3 className="font-medium text-foreground text-base">
-                      {order.customer_name}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">{order.customer_email}</p>
-                    {order.customer_phone && (
-                      <p className="text-xs text-muted-foreground">{order.customer_phone}</p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs rounded-2xl bg-secondary/30 p-3">
-                    <div>
-                      <span className="text-muted-foreground">Event:</span>
-                      <p className="font-medium text-foreground">{order.event_type}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Event Date:</span>
-                      <p className="font-medium text-foreground flex items-center gap-1 mt-0.5">
-                        <Calendar className="h-3 w-3 text-primary" />
-                        {formatDate(order.event_date)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-muted-foreground">
-                      Requested: {formatDate(order.created_at)}
-                    </span>
-                    <Button
-                      size="sm"
-                      onClick={() => handleOpenOrderDetails(order)}
-                      className="rounded-full text-xs cursor-pointer"
-                    >
-                      View Details
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 5. Comprehensive Order Details Drawer / Modal */}
+      {/* 5. SELECTED ORDER DETAILS MODAL / DRAWER */}
       {selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto">
-          <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-soft border border-border/80 overflow-hidden my-auto">
+          <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-soft border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border/60 px-6 py-5 bg-card sticky top-0 z-10">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-sm font-bold text-foreground">
-                    #{selectedOrder.id.slice(0, 8)}
-                  </span>
-                  {renderStatusBadge(selectedOrder.status)}
-                  <button
-                    type="button"
-                    onClick={() => handleCopyUUID(selectedOrder.id)}
-                    className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-secondary transition-colors cursor-pointer"
-                    title="Copy Full UUID"
-                  >
-                    {copiedId ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                    <span>{copiedId ? "Copied" : "Copy UUID"}</span>
-                  </button>
-                </div>
-                <h2 className="text-lg font-medium text-foreground">
-                  {selectedOrder.event_type} Custom Cake Request
-                </h2>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs font-semibold text-muted-foreground bg-secondary px-2.5 py-1 rounded-xl">
+                  #{selectedOrder.id.slice(0, 8)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyUUID(selectedOrder.id)}
+                  className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                  title="Copy full UUID"
+                >
+                  {copiedId ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                </button>
+                {renderStatusBadge(selectedOrder.status)}
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(null)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary/80 text-foreground hover:bg-secondary transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenTicket(selectedOrder)}
+                  className="rounded-full text-xs h-8 px-3 gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>Print Ticket</span>
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary/80 text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                  aria-label="Close details"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Scrollable Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-7">
-              {/* STATUS TRANSITION CONTROLLER */}
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                      <ShieldCheck className="h-4 w-4 text-primary" />
-                      Manage Workflow Status
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Advance or adjust the progress stage of this cake order
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedOrder.status}
-                      disabled={isUpdatingStatus}
-                      onChange={(e) => handleStatusChange(e.target.value)}
-                      className="rounded-xl border border-primary/30 bg-card px-3.5 py-2 text-xs font-semibold text-foreground shadow-xs focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
-                    >
-                      {ORDER_STATUSES.map((st) => (
-                        <option key={st.value} value={st.value}>
-                          Set Status: {st.label}
-                        </option>
-                      ))}
-                    </select>
-                    {isUpdatingStatus && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                  </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Order Status Workflow Progression Bar */}
+              <div className="space-y-3 rounded-2xl bg-secondary/20 p-5 border border-border/50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Workflow Status Progression
+                  </span>
+                  <span className="text-xs text-muted-foreground">Select stage to transition</span>
                 </div>
 
-                {/* Visual Workflow Timeline */}
-                <div className="pt-3 border-t border-primary/15">
-                  <div className="text-[11px] font-medium text-muted-foreground mb-3">
-                    Progress Timeline
-                  </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                  {WORKFLOW_STAGES.map((st) => {
+                    const isCurrent = selectedOrder.status === st.key;
+                    return (
+                      <button
+                        key={st.key}
+                        type="button"
+                        onClick={() => handleStatusChange(st.key)}
+                        disabled={isUpdatingStatus}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-all cursor-pointer ${
+                          isCurrent
+                            ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                            : "bg-card text-foreground hover:bg-secondary/60 border border-border/60"
+                        }`}
+                      >
+                        <span>{st.label}</span>
+                        {isCurrent && <CheckCircle2 className="h-3.5 w-3.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                  {selectedOrder.status === "cancelled" ? (
-                    <div className="flex items-center gap-2 rounded-xl bg-zinc-500/10 p-3 text-xs font-medium text-zinc-700">
-                      <AlertCircle className="h-4 w-4" />
-                      <span>This custom order has been marked as Cancelled.</span>
-                    </div>
-                  ) : selectedOrder.status === "declined" ? (
-                    <div className="flex items-center gap-2 rounded-xl bg-rose-500/10 p-3 text-xs font-medium text-rose-700">
-                      <XCircle className="h-4 w-4" />
-                      <span>This custom order has been marked as Declined.</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between relative">
-                      {WORKFLOW_STAGES.map((stage, idx) => {
-                        const currentIndex = WORKFLOW_STAGES.findIndex((s) => s.key === selectedOrder.status);
-                        const isPastOrCurrent = idx <= (currentIndex !== -1 ? currentIndex : 0);
-                        const isCurrent = stage.key === selectedOrder.status;
-
-                        return (
-                          <div key={stage.key} className="flex flex-col items-center flex-1 relative">
-                            <div
-                              className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold z-10 transition-colors ${
-                                isCurrent
-                                  ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
-                                  : isPastOrCurrent
-                                  ? "bg-primary/80 text-primary-foreground"
-                                  : "bg-muted text-muted-foreground border border-border"
-                              }`}
-                            >
-                              {idx + 1}
-                            </div>
-                            <span
-                              className={`text-[9px] sm:text-[10px] text-center mt-1.5 font-medium truncate max-w-[60px] sm:max-w-none ${
-                                isCurrent ? "text-primary font-bold" : "text-muted-foreground"
-                              }`}
-                            >
-                              {stage.label}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                {/* Decline / Cancel Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/40">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleStatusChange("declined")}
+                    disabled={isUpdatingStatus}
+                    className="text-xs text-rose-600 hover:bg-rose-500/10 rounded-full h-8 px-3"
+                  >
+                    Decline Order
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleStatusChange("cancelled")}
+                    disabled={isUpdatingStatus}
+                    className="text-xs text-zinc-600 hover:bg-zinc-500/10 rounded-full h-8 px-3"
+                  >
+                    Cancel Order
+                  </Button>
                 </div>
               </div>
 
-              {/* CUSTOMER & EVENT METADATA GRID */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* Customer Information */}
-                <div className="rounded-2xl bg-secondary/20 p-4 space-y-3 border border-border/50">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              {/* Customer & Event Metadata Grid */}
+              <div className="grid grid-cols-2 gap-4 rounded-2xl bg-secondary/20 p-4 sm:grid-cols-3 border border-border/40 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Customer Name</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
                     <User className="h-3.5 w-3.5 text-primary" />
-                    Customer Details
-                  </h4>
-                  <div className="space-y-1.5 text-xs">
-                    <p className="text-sm font-semibold text-foreground">{selectedOrder.customer_name}</p>
-                    <p className="flex items-center gap-1.5 text-muted-foreground">
-                      <Mail className="h-3.5 w-3.5" />
-                      <a href={`mailto:${selectedOrder.customer_email}`} className="hover:text-primary transition-colors">
-                        {selectedOrder.customer_email}
-                      </a>
-                    </p>
-                    {selectedOrder.customer_phone && (
-                      <p className="flex items-center gap-1.5 text-muted-foreground">
-                        <Phone className="h-3.5 w-3.5" />
-                        <a href={`tel:${selectedOrder.customer_phone}`} className="hover:text-primary transition-colors">
-                          {selectedOrder.customer_phone}
-                        </a>
-                      </p>
-                    )}
-                    <p className="flex items-start gap-1.5 text-muted-foreground pt-1 border-t border-border/30">
-                      <MapPin className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
-                      <span>{customerAddress || "Address not provided"}</span>
-                    </p>
-                  </div>
+                    {selectedOrder.customer_name}
+                  </p>
                 </div>
 
-                {/* Event Information */}
-                <div className="rounded-2xl bg-secondary/20 p-4 space-y-3 border border-border/50">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <div>
+                  <span className="text-muted-foreground">Email Address</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5 truncate">
+                    <Mail className="h-3.5 w-3.5 text-primary" />
+                    {selectedOrder.customer_email}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground">Phone Number</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                    <Phone className="h-3.5 w-3.5 text-primary" />
+                    {selectedOrder.customer_phone || "Not provided"}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground">Event Type</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                    <Cake className="h-3.5 w-3.5 text-primary" />
+                    {selectedOrder.event_type}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground">Event Date</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
                     <Calendar className="h-3.5 w-3.5 text-primary" />
-                    Event & Scheduling
-                  </h4>
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">Event Type:</span>
-                      <p className="font-semibold text-foreground text-sm">{selectedOrder.event_type}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Scheduled Date:</span>
-                      <p className="font-semibold text-primary text-sm flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {formatDate(selectedOrder.event_date)}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between text-muted-foreground pt-1 border-t border-border/30">
-                      <span>Submitted: {formatDate(selectedOrder.created_at)}</span>
-                      {selectedOrder.updated_at && (
-                        <span>Updated: {formatDate(selectedOrder.updated_at)}</span>
-                      )}
-                    </div>
-                  </div>
+                    {formatDate(selectedOrder.event_date)}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground">Requested On</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                    <Clock className="h-3.5 w-3.5 text-primary" />
+                    {formatDate(selectedOrder.created_at)}
+                  </p>
+                </div>
+
+                <div className="col-span-2 sm:col-span-3">
+                  <span className="text-muted-foreground">Delivery / City Address</span>
+                  <p className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                    {customerAddress || "Loading address..."}
+                  </p>
                 </div>
               </div>
 
-              {/* CAKE DETAILS & INSTRUCTIONS */}
+              {/* Cake Details Box */}
               <div className="space-y-2">
-                <h4 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground uppercase tracking-wider">
                   <FileText className="h-4 w-4 text-primary" />
-                  Cake Instructions & Flavor Vision
+                  Cake Requirements & Description
                 </h4>
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
                   {selectedOrder.cake_details}
                 </div>
               </div>
 
-              {/* ADMINISTRATOR NOTES EDITOR */}
-              <div className="rounded-2xl border border-border/70 bg-card p-4 sm:p-5 space-y-3 shadow-xs">
+              {/* Admin / Bakery Notes Editor */}
+              <div className="space-y-2 rounded-2xl bg-secondary/20 p-5 border border-border/40">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                      <FileText className="h-4 w-4 text-primary" />
-                      Administrator & Bakery Notes
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Record quotes, flavor recipes, custom cake dimensions, or internal bakery notes
-                    </p>
-                  </div>
+                  <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                    <ShieldCheck className="h-4 w-4" />
+                    Bakery Notes & Quote Guidance
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground">
+                    Visible to customer on their account page
+                  </span>
+                </div>
+                <Textarea
+                  rows={3}
+                  placeholder="Enter quote pricing details, kitchen instructions, or pickup notes for the customer..."
+                  value={adminNotesText}
+                  onChange={(e) => setAdminNotesText(e.target.value)}
+                  className="rounded-2xl bg-card border-border/60 text-xs"
+                />
+                <div className="flex justify-end pt-1">
                   <Button
                     size="sm"
                     onClick={handleSaveNotes}
                     disabled={isSavingNotes}
-                    className="rounded-full text-xs cursor-pointer"
+                    className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs"
                   >
                     {isSavingNotes ? (
                       <>
                         <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        Saving...
+                        Saving Notes...
                       </>
                     ) : (
-                      "Save Notes"
+                      "Save Bakery Notes"
                     )}
                   </Button>
                 </div>
-
-                <Textarea
-                  value={adminNotesText}
-                  onChange={(e) => setAdminNotesText(e.target.value)}
-                  placeholder="Type bakery notes, price quotes, special ingredients, or delivery coordination..."
-                  rows={4}
-                  className="rounded-xl bg-background border-border/70 text-xs"
-                  disabled={isSavingNotes}
-                />
               </div>
 
-              {/* REFERENCE PHOTOS GALLERY (On-demand Signed URLs) */}
+              {/* Reference Photos */}
               <div className="space-y-3">
-                <h4 className="flex items-center justify-between text-sm font-medium text-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <ImageIcon className="h-4 w-4 text-primary" />
-                    Customer Reference & Inspiration Photos ({orderImages.length})
-                  </span>
-                  <span className="text-xs text-muted-foreground">Private Storage (1h Signed URLs)</span>
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground uppercase tracking-wider">
+                  <ImageIcon className="h-4 w-4 text-primary" />
+                  Inspiration Photos ({orderImages.length})
                 </h4>
 
                 {loadingImages ? (
-                  <div className="flex items-center justify-center py-10 rounded-2xl border border-border/40 bg-secondary/10">
+                  <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                    <span className="text-xs text-muted-foreground">
-                      Generating secure image signed URLs...
-                    </span>
+                    <span className="text-xs text-muted-foreground">Loading photos...</span>
                   </div>
                 ) : orderImages.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground">
-                    No reference photos were attached to this request.
+                  <div className="rounded-2xl border border-dashed border-border/80 p-6 text-center text-xs text-muted-foreground">
+                    No inspiration photos were attached to this request.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -1133,20 +1145,17 @@ function AdminOrdersPage() {
                               alt={img.file_name}
                               className="h-full w-full object-cover transition-transform group-hover:scale-105"
                             />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <ExternalLink className="h-6 w-6 text-white drop-shadow-md" />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ExternalLink className="h-5 w-5 text-white" />
                             </div>
                           </>
                         ) : (
-                          <div className="flex h-full items-center justify-center p-3 text-center text-xs text-destructive">
-                            Failed to generate image link
+                          <div className="flex h-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+                            Photo unavailable
                           </div>
                         )}
-                        <div className="absolute bottom-0 inset-x-0 bg-background/90 backdrop-blur-xs px-2 py-1 text-[10px] text-foreground truncate text-center flex items-center justify-between">
-                          <span className="truncate">{img.file_name}</span>
-                          <span className="text-muted-foreground ml-1 shrink-0">
-                            {formatFileSize(img.file_size_bytes)}
-                          </span>
+                        <div className="absolute bottom-0 inset-x-0 bg-background/90 backdrop-blur-xs px-2 py-1 text-[10px] text-foreground truncate text-center">
+                          {img.file_name}
                         </div>
                       </div>
                     ))}
@@ -1175,7 +1184,7 @@ function AdminOrdersPage() {
       {/* 6. FULL-SIZE LIGHTBOX IMAGE PREVIEW */}
       {activePreviewImage && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-70 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setActivePreviewImage(null)}
         >
           <button
@@ -1193,6 +1202,15 @@ function AdminOrdersPage() {
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+
+      {/* 7. PRINTABLE KITCHEN BAKING TICKET */}
+      {ticketOrder && (
+        <KitchenProductionTicket
+          order={ticketOrder}
+          images={ticketImages}
+          onClose={() => setTicketOrder(null)}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,9 +25,21 @@ import {
   Mail,
   Edit3,
   ShieldCheck,
+  Sparkles,
+  Copy,
+  Check,
+  Search,
+  Filter,
+  XCircle,
+  HelpCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { ReviewSubmissionModal } from "@/components/review-submission-modal";
+import {
+  CustomOrderTimeline,
+  STATUS_LABELS,
+} from "@/components/custom-order-timeline";
 
 export const Route = createFileRoute("/account")({
   head: () => ({
@@ -67,6 +79,9 @@ interface OrderImage {
   signedUrl?: string | null;
 }
 
+const ACTIVE_STATUSES = ["submitted", "under_review", "quoted", "accepted", "in_baking", "ready"];
+const PAST_STATUSES = ["completed", "declined", "cancelled"];
+
 function AccountPage() {
   const navigate = useNavigate();
   const { user, profile, loading: authLoading, refreshProfile, signOut } = useAuth();
@@ -76,11 +91,26 @@ function AccountPage() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
+  // Orders Filter & Search state
+  const [orderFilter, setOrderFilter] = useState<"all" | "active" | "past">("all");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+
   // Selected order details state
   const [selectedOrder, setSelectedOrder] = useState<CustomOrder | null>(null);
   const [orderImages, setOrderImages] = useState<OrderImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [activePreviewImage, setActivePreviewImage] = useState<string | null>(null);
+
+  // Action Confirmation state (Accept Quote / Cancel Order)
+  const [actionConfirmation, setActionConfirmation] = useState<{
+    type: "accept" | "cancel";
+    order: CustomOrder;
+  } | null>(null);
+  const [isPerformingAction, setIsPerformingAction] = useState(false);
+
+  // Review submission modal state
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
   // Profile edit state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -142,9 +172,54 @@ function AccountPage() {
     }
   }, [user, fetchOrders]);
 
-  // 3. Order Details & Reference Images Handler with Strict Ownership Verification
+  // 3. Derived Filtered & Searched Orders
+  const { filteredOrders, orderCounts } = useMemo(() => {
+    const allCount = orders.length;
+    const activeCount = orders.filter((o) =>
+      ACTIVE_STATUSES.includes(o.status.toLowerCase())
+    ).length;
+    const pastCount = orders.filter((o) =>
+      PAST_STATUSES.includes(o.status.toLowerCase())
+    ).length;
+
+    const query = orderSearch.toLowerCase().trim();
+
+    const result = orders.filter((order) => {
+      const statusLower = order.status.toLowerCase();
+
+      // 1. Filter by Active / Past
+      if (orderFilter === "active" && !ACTIVE_STATUSES.includes(statusLower)) {
+        return false;
+      }
+      if (orderFilter === "past" && !PAST_STATUSES.includes(statusLower)) {
+        return false;
+      }
+
+      // 2. Search query filter
+      if (query) {
+        const typeMatch = order.event_type.toLowerCase().includes(query);
+        const dateMatch = order.event_date.toLowerCase().includes(query);
+        const idMatch = order.id.toLowerCase().includes(query);
+        const shortIdMatch = `#${order.id.slice(0, 8).toLowerCase()}`.includes(query);
+        const detailsMatch = (order.cake_details || "").toLowerCase().includes(query);
+        const notesMatch = (order.admin_notes || "").toLowerCase().includes(query);
+
+        if (!typeMatch && !dateMatch && !idMatch && !shortIdMatch && !detailsMatch && !notesMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    return {
+      filteredOrders: result,
+      orderCounts: { all: allCount, active: activeCount, past: pastCount },
+    };
+  }, [orders, orderFilter, orderSearch]);
+
+  // 4. Order Details & Reference Images Handler with Strict Ownership Verification
   const handleOpenOrder = async (order: CustomOrder) => {
-    // Security check: Confirm the order belongs to the current authenticated user
     if (!user || order.customer_id !== user.id) {
       toast.error("Unauthorized access to this order.");
       return;
@@ -163,7 +238,6 @@ function AccountPage() {
       if (imagesError) throw imagesError;
 
       if (imagesData && imagesData.length > 0) {
-        // Generate secure signed URLs from private 'cake-references' bucket
         const imagesWithSignedUrls = await Promise.all(
           imagesData.map(async (img) => {
             const { data: signedData, error: signedError } = await supabase.storage
@@ -187,7 +261,84 @@ function AccountPage() {
     }
   };
 
-  // 4. Profile Update Handler
+  // 5. Customer Action: Confirm Quote (quoted -> accepted)
+  const handleConfirmAcceptQuote = async (order: CustomOrder) => {
+    if (!user || isPerformingAction) return;
+    setIsPerformingAction(true);
+
+    try {
+      const { error } = await supabase
+        .from("custom_orders")
+        .update({
+          status: "accepted",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .eq("customer_id", user.id)
+        .eq("status", "quoted"); // Enforces strict condition
+
+      if (error) throw error;
+
+      toast.success("Quote accepted! Your custom cake order has been confirmed with our bakery team.");
+      setActionConfirmation(null);
+      await fetchOrders();
+
+      if (selectedOrder && selectedOrder.id === order.id) {
+        setSelectedOrder({ ...selectedOrder, status: "accepted", updated_at: new Date().toISOString() });
+      }
+    } catch (err: any) {
+      console.error("Error accepting quote:", err);
+      toast.error(err.message || "Failed to confirm quote. Please try again.");
+    } finally {
+      setIsPerformingAction(false);
+    }
+  };
+
+  // 6. Customer Action: Cancel Request (submitted/under_review/quoted -> cancelled)
+  const handleConfirmCancelOrder = async (order: CustomOrder) => {
+    if (!user || isPerformingAction) return;
+    setIsPerformingAction(true);
+
+    try {
+      const { error } = await supabase
+        .from("custom_orders")
+        .update({
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .eq("customer_id", user.id)
+        .in("status", ["submitted", "under_review", "quoted"]); // Restricts to cancelable unbaked statuses
+
+      if (error) throw error;
+
+      toast.success("Custom order request has been cancelled.");
+      setActionConfirmation(null);
+      await fetchOrders();
+
+      if (selectedOrder && selectedOrder.id === order.id) {
+        setSelectedOrder({ ...selectedOrder, status: "cancelled", updated_at: new Date().toISOString() });
+      }
+    } catch (err: any) {
+      console.error("Error cancelling order:", err);
+      toast.error(err.message || "Failed to cancel request.");
+    } finally {
+      setIsPerformingAction(false);
+    }
+  };
+
+  // 7. Copy Order ID to Clipboard
+  const handleCopyOrderId = (e: React.MouseEvent, orderId: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(orderId);
+    setCopiedOrderId(orderId);
+    toast.success("Order ID copied to clipboard");
+    setTimeout(() => {
+      setCopiedOrderId(null);
+    }, 2000);
+  };
+
+  // 8. Profile Update Handler
   const handleSaveProfile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user || isSavingProfile) return;
@@ -238,20 +389,22 @@ function AccountPage() {
       case "under_review":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 border border-indigo-500/20">
+            <Clock className="h-3 w-3" />
             Under Review
           </span>
         );
       case "quoted":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 border border-sky-500/20">
-            Quoted
+            <Sparkles className="h-3 w-3" />
+            Quote Ready
           </span>
         );
       case "accepted":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-500/20">
             <CheckCircle2 className="h-3 w-3" />
-            Accepted
+            Confirmed
           </span>
         );
       case "in_baking":
@@ -264,7 +417,8 @@ function AccountPage() {
       case "ready":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/10 px-2.5 py-1 text-xs font-semibold text-teal-700 border border-teal-500/20">
-            Ready
+            <CheckCircle2 className="h-3 w-3" />
+            Ready for Pickup
           </span>
         );
       case "completed":
@@ -291,7 +445,7 @@ function AccountPage() {
       default:
         return (
           <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground border border-border">
-            {status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            {STATUS_LABELS[s] || status}
           </span>
         );
     }
@@ -323,7 +477,7 @@ function AccountPage() {
   }
 
   if (!user) {
-    return null; // Will redirect via useEffect
+    return null;
   }
 
   const customerDisplayName = profile?.full_name || user.email?.split("@")[0] || "Valued Customer";
@@ -332,7 +486,7 @@ function AccountPage() {
     <div className="min-h-[calc(100vh-5rem)] bg-gradient-hero px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl space-y-8">
         {/* Account Header Banner */}
-        <div className="flex flex-col gap-6 rounded-3xl bg-card p-6 shadow-soft sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <div className="flex flex-col gap-6 rounded-3xl bg-card p-6 shadow-soft sm:flex-row sm:items-center sm:justify-between sm:p-8 border border-border/60">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blush text-2xl font-bold text-primary shadow-xs">
               {customerDisplayName.charAt(0).toUpperCase()}
@@ -356,6 +510,14 @@ function AccountPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsReviewModalOpen(true)}
+              className="rounded-full border-border text-xs font-medium gap-1.5 hover:bg-amber-500/10 hover:text-amber-700 hover:border-amber-500/30 cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              <span>Leave a Review</span>
+            </Button>
             <Link
               to="/custom-orders"
               className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
@@ -366,7 +528,7 @@ function AccountPage() {
             <Button
               variant="outline"
               onClick={() => signOut()}
-              className="rounded-full border-border text-xs font-medium hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              className="rounded-full border-border text-xs font-medium hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 cursor-pointer"
             >
               <LogOut className="mr-1.5 h-3.5 w-3.5" />
               Sign Out
@@ -388,7 +550,7 @@ function AccountPage() {
             <Package className="h-4 w-4" />
             My Custom Orders
             {orders.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs text-foreground">
+              <span className="ml-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs text-foreground font-semibold">
                 {orders.length}
               </span>
             )}
@@ -410,25 +572,92 @@ function AccountPage() {
         {/* TAB 1: MY CUSTOM ORDERS */}
         {activeTab === "orders" && (
           <div className="space-y-6">
+            {/* Search & Status Filters Bar */}
+            {orders.length > 0 && (
+              <div className="rounded-3xl bg-card p-4 sm:p-5 shadow-soft border border-border/70 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Search Input */}
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="Search by event, date, or #Order ID..."
+                      value={orderSearch}
+                      onChange={(e) => setOrderSearch(e.target.value)}
+                      className="rounded-2xl pl-10 bg-secondary/20 border-border/70 text-xs h-10"
+                    />
+                    {orderSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setOrderSearch("")}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter Pills */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setOrderFilter("all")}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                        orderFilter === "all"
+                          ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                          : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      }`}
+                    >
+                      All Orders ({orderCounts.all})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderFilter("active")}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                        orderFilter === "active"
+                          ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                          : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      }`}
+                    >
+                      Active Celebrations ({orderCounts.active})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderFilter("past")}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                        orderFilter === "past"
+                          ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                          : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      }`}
+                    >
+                      Completed / Past ({orderCounts.past})
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Orders Content Area */}
             {loadingOrders ? (
-              <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-16 shadow-soft">
+              <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-16 shadow-soft border border-border/60">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
                 <p className="text-sm text-muted-foreground">Loading your custom cake orders...</p>
               </div>
             ) : ordersError ? (
-              <div className="rounded-3xl bg-destructive/10 p-8 text-center shadow-soft">
+              <div className="rounded-3xl bg-destructive/10 p-8 text-center shadow-soft border border-destructive/20">
                 <AlertCircle className="mx-auto h-8 w-8 text-destructive mb-2" />
                 <p className="text-sm font-medium text-destructive">{ordersError}</p>
                 <Button
                   variant="outline"
                   onClick={fetchOrders}
-                  className="mt-4 rounded-full border-destructive/30 text-destructive"
+                  className="mt-4 rounded-full border-destructive/30 text-destructive cursor-pointer"
                 >
                   Try Again
                 </Button>
               </div>
             ) : orders.length === 0 ? (
-              <div className="rounded-3xl bg-card p-12 text-center shadow-soft space-y-4">
+              <div className="rounded-3xl bg-card p-12 text-center shadow-soft border border-border/60 space-y-4">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-blush text-primary">
                   <Cake className="h-8 w-8" />
                 </div>
@@ -446,52 +675,158 @@ function AccountPage() {
                   </Link>
                 </div>
               </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="rounded-3xl bg-card p-10 text-center shadow-soft border border-border/60 space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                  <Filter className="h-6 w-6" />
+                </div>
+                <h4 className="text-base font-medium text-foreground">No matching orders found</h4>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  {orderSearch
+                    ? `No custom orders match "${orderSearch}". Try searching for another event or date.`
+                    : "No orders found in this category."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setOrderSearch("");
+                    setOrderFilter("all");
+                  }}
+                  className="rounded-full text-xs cursor-pointer"
+                >
+                  Clear Filters
+                </Button>
+              </div>
             ) : (
-              <div className="grid gap-4 sm:gap-6">
-                {orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="group flex flex-col justify-between gap-4 rounded-3xl bg-card p-6 shadow-soft transition-all hover:shadow-md sm:flex-row sm:items-center sm:p-7"
-                  >
-                    <div className="space-y-2 flex-1">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-xs font-mono font-medium text-muted-foreground">
-                          #{order.id.slice(0, 8)}
-                        </span>
-                        {renderStatusBadge(order.status)}
-                        <span className="text-xs text-muted-foreground">
-                          Requested on {formatDate(order.created_at)}
-                        </span>
+              <div className="grid gap-6">
+                {filteredOrders.map((order) => {
+                  const statusLower = order.status.toLowerCase();
+                  const isQuoted = statusLower === "quoted";
+                  const canCancel = ["submitted", "under_review", "quoted"].includes(statusLower);
+                  const shortId = order.id.slice(0, 8).toUpperCase();
+                  const isCopied = copiedOrderId === order.id;
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="group flex flex-col justify-between gap-6 rounded-3xl bg-card p-6 sm:p-8 shadow-soft border border-border/70 hover:border-primary/40 transition-all"
+                    >
+                      {/* Card Header */}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/50 pb-4">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          {/* Order ID with Copy Button */}
+                          <div className="flex items-center gap-1 rounded-xl bg-secondary/50 px-2.5 py-1 text-xs font-mono font-medium text-foreground border border-border/60">
+                            <span>#{shortId}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyOrderId(e, order.id)}
+                              className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded cursor-pointer"
+                              title="Copy full Order UUID"
+                              aria-label={`Copy Order ID #${shortId}`}
+                            >
+                              {isCopied ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
+
+                          {renderStatusBadge(order.status)}
+
+                          <span className="text-xs text-muted-foreground">
+                            Requested on {formatDate(order.created_at)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                          <Calendar className="h-3.5 w-3.5" />
+                          <span>Event Date: {formatDate(order.event_date)}</span>
+                        </div>
                       </div>
 
-                      <h3 className="text-lg font-medium text-foreground">
-                        {order.event_type} Celebration
-                      </h3>
-
-                      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3.5 w-3.5 text-primary" />
-                          Event Date: {formatDate(order.event_date)}
-                        </span>
+                      {/* Event Title */}
+                      <div className="space-y-1">
+                        <h3 className="text-xl font-medium text-foreground">
+                          {order.event_type} Celebration Cake
+                        </h3>
+                        <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed">
+                          {order.cake_details}
+                        </p>
                       </div>
 
-                      <p className="line-clamp-2 text-xs text-muted-foreground/90 max-w-2xl mt-1">
-                        {order.cake_details}
-                      </p>
-                    </div>
+                      {/* 5-Stage Custom Order Progress Timeline */}
+                      <div className="rounded-2xl bg-secondary/20 p-4 sm:p-5 border border-border/50">
+                        <CustomOrderTimeline
+                          status={order.status}
+                          showExplanation={true}
+                        />
+                      </div>
 
-                    <div className="pt-2 sm:pt-0">
-                      <Button
-                        variant="secondary"
-                        onClick={() => handleOpenOrder(order)}
-                        className="w-full rounded-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors sm:w-auto"
-                      >
-                        <span>View Details</span>
-                        <ChevronRight className="ml-1 h-4 w-4" />
-                      </Button>
+                      {/* Prominent Quote / Instructions Banner (When Quoted) with Action Buttons */}
+                      {isQuoted && (
+                        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                            <Sparkles className="h-4 w-4 text-amber-600" />
+                            <span>Quotation & Bakery Instructions Ready</span>
+                          </div>
+                          <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                            {order.admin_notes ||
+                              "Your custom cake request has been reviewed and quoted by our bakery team. Please review the details and click below to confirm your order."}
+                          </p>
+
+                          {/* Customer Confirmation Action Button */}
+                          <div className="pt-2 flex flex-wrap items-center gap-3">
+                            <Button
+                              onClick={() => setActionConfirmation({ type: "accept", order })}
+                              className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer shadow-xs font-semibold"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span>Accept Quote & Confirm Order</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setActionConfirmation({ type: "cancel", order })}
+                              className="rounded-full text-xs h-9 px-4 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1" />
+                              <span>Cancel Request</span>
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Card Footer Actions */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-border/40">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>
+                            Contact: <span className="font-medium text-foreground">{order.customer_name}</span>
+                          </span>
+                          {/* Cancel button for unbaked non-quoted requests */}
+                          {canCancel && !isQuoted && (
+                            <button
+                              type="button"
+                              onClick={() => setActionConfirmation({ type: "cancel", order })}
+                              className="text-xs text-muted-foreground hover:text-destructive underline decoration-dotted transition-colors cursor-pointer"
+                            >
+                              Cancel Request
+                            </button>
+                          )}
+                        </div>
+
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleOpenOrder(order)}
+                          className="rounded-full text-xs hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer gap-1.5"
+                        >
+                          <span>View Full Order Details</span>
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -499,7 +834,7 @@ function AccountPage() {
 
         {/* TAB 2: PROFILE SETTINGS */}
         {activeTab === "profile" && (
-          <div className="rounded-3xl bg-card p-6 shadow-soft sm:p-8">
+          <div className="rounded-3xl bg-card p-6 shadow-soft sm:p-8 border border-border/60">
             <div className="flex items-center justify-between pb-6 border-b border-border/60">
               <div>
                 <h2 className="text-xl font-medium text-foreground">Personal Information</h2>
@@ -512,7 +847,7 @@ function AccountPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setIsEditingProfile(true)}
-                  className="rounded-full gap-1.5"
+                  className="rounded-full gap-1.5 cursor-pointer"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
                   Edit Profile
@@ -599,14 +934,14 @@ function AccountPage() {
                       }
                     }}
                     disabled={isSavingProfile}
-                    className="rounded-full"
+                    className="rounded-full cursor-pointer"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
                     disabled={isSavingProfile}
-                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                   >
                     {isSavingProfile ? (
                       <>
@@ -621,7 +956,7 @@ function AccountPage() {
               </form>
             ) : (
               <div className="mt-6 grid gap-6 sm:grid-cols-2">
-                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4">
+                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4 border border-border/40">
                   <User className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <span className="text-xs font-medium text-muted-foreground">Full Name</span>
@@ -631,7 +966,7 @@ function AccountPage() {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4">
+                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4 border border-border/40">
                   <Mail className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <span className="text-xs font-medium text-muted-foreground">Email Address</span>
@@ -639,7 +974,7 @@ function AccountPage() {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4">
+                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4 border border-border/40">
                   <Phone className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <span className="text-xs font-medium text-muted-foreground">Phone Number</span>
@@ -649,7 +984,7 @@ function AccountPage() {
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4">
+                <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4 border border-border/40">
                   <MapPin className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <span className="text-xs font-medium text-muted-foreground">City & Address</span>
@@ -668,15 +1003,28 @@ function AccountPage() {
 
       {/* ORDER DETAILS MODAL / DIALOG */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6">
-          <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl bg-card shadow-soft border border-border/80 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto">
+          <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl bg-card shadow-soft border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-border/60 px-6 py-5">
+            <div className="flex items-center justify-between border-b border-border/60 px-6 py-5 bg-card sticky top-0 z-10">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-medium text-muted-foreground">
-                    #{selectedOrder.id.slice(0, 8)}
+                  <span className="text-xs font-mono font-semibold text-muted-foreground">
+                    #{selectedOrder.id.slice(0, 8).toUpperCase()}
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleCopyOrderId(e, selectedOrder.id)}
+                    className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded cursor-pointer"
+                    title="Copy full Order UUID"
+                    aria-label={`Copy Order ID #${selectedOrder.id.slice(0, 8)}`}
+                  >
+                    {copiedOrderId === selectedOrder.id ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
                   {renderStatusBadge(selectedOrder.status)}
                 </div>
                 <h2 className="text-xl font-medium text-foreground mt-1">
@@ -695,8 +1043,53 @@ function AccountPage() {
 
             {/* Modal Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* 5-Stage Custom Order Progress Timeline in Modal */}
+              <div className="rounded-2xl bg-secondary/20 p-5 border border-border/50">
+                <CustomOrderTimeline
+                  status={selectedOrder.status}
+                  showExplanation={true}
+                />
+              </div>
+
+              {/* Prominent Quote / Instructions Banner with Action Buttons in Modal */}
+              {(selectedOrder.status.toLowerCase() === "quoted" || selectedOrder.admin_notes) && (
+                <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                    <Sparkles className="h-4 w-4 text-amber-600" />
+                    <span>Bakery Team Notes & Quotation</span>
+                  </div>
+                  <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                    {selectedOrder.admin_notes ||
+                      "Your custom cake request has been reviewed by our bakery chef. Please review the instructions or confirm your order."}
+                  </p>
+
+                  {/* Accept quote action in modal */}
+                  {selectedOrder.status.toLowerCase() === "quoted" && (
+                    <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                      <Button
+                        size="sm"
+                        onClick={() => setActionConfirmation({ type: "accept", order: selectedOrder })}
+                        className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer font-semibold shadow-xs"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Accept Quote & Confirm Order</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setActionConfirmation({ type: "cancel", order: selectedOrder })}
+                        className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-1" />
+                        <span>Cancel Request</span>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Order Metadata Grid */}
-              <div className="grid grid-cols-2 gap-4 rounded-2xl bg-secondary/20 p-4 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 rounded-2xl bg-secondary/20 p-4 sm:grid-cols-3 border border-border/40">
                 <div>
                   <span className="text-xs text-muted-foreground">Event Date</span>
                   <p className="text-sm font-medium text-foreground flex items-center gap-1.5 mt-0.5">
@@ -728,19 +1121,6 @@ function AccountPage() {
                   {selectedOrder.cake_details}
                 </div>
               </div>
-
-              {/* Admin / Bakery Notes (if any) */}
-              {selectedOrder.admin_notes && (
-                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-1.5">
-                  <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                    <ShieldCheck className="h-4 w-4" />
-                    Note from the Bakery Team
-                  </h4>
-                  <p className="text-xs text-foreground/80 leading-relaxed">
-                    {selectedOrder.admin_notes}
-                  </p>
-                </div>
-              )}
 
               {/* Uploaded Reference Images */}
               <div className="space-y-3">
@@ -793,13 +1173,96 @@ function AccountPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-end border-t border-border/60 px-6 py-4">
+            <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
+              {["submitted", "under_review"].includes(selectedOrder.status.toLowerCase()) ? (
+                <button
+                  type="button"
+                  onClick={() => setActionConfirmation({ type: "cancel", order: selectedOrder })}
+                  className="text-xs text-muted-foreground hover:text-destructive underline decoration-dotted transition-colors cursor-pointer"
+                >
+                  Cancel Order Request
+                </button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Status: <span className="font-semibold text-foreground uppercase">{STATUS_LABELS[selectedOrder.status.toLowerCase()] || selectedOrder.status}</span>
+                </span>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setSelectedOrder(null)}
-                className="rounded-full"
+                className="rounded-full text-xs cursor-pointer"
               >
                 Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ACTION CONFIRMATION DIALOG (Accept Quote / Cancel Request) */}
+      {actionConfirmation && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-md rounded-3xl bg-card p-6 shadow-2xl border border-border space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-start gap-3">
+              {actionConfirmation.type === "accept" ? (
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary flex-shrink-0 mt-0.5">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-destructive/10 text-destructive flex-shrink-0 mt-0.5">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+              )}
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  {actionConfirmation.type === "accept"
+                    ? "Confirm & Accept Quote?"
+                    : "Cancel Custom Order Request?"}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  {actionConfirmation.type === "accept"
+                    ? "By confirming, you accept the bakery instructions and quote for this custom cake. Our pastry team will schedule baking for your event date."
+                    : "Are you sure you want to cancel this custom cake request? This action cannot be undone."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/60">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setActionConfirmation(null)}
+                disabled={isPerformingAction}
+                className="rounded-full text-xs cursor-pointer"
+              >
+                Go Back
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (actionConfirmation.type === "accept") {
+                    handleConfirmAcceptQuote(actionConfirmation.order);
+                  } else {
+                    handleConfirmCancelOrder(actionConfirmation.order);
+                  }
+                }}
+                disabled={isPerformingAction}
+                className={`rounded-full text-xs cursor-pointer ${
+                  actionConfirmation.type === "accept"
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                }`}
+              >
+                {isPerformingAction ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Processing...
+                  </>
+                ) : actionConfirmation.type === "accept" ? (
+                  "Yes, Confirm Order"
+                ) : (
+                  "Yes, Cancel Request"
+                )}
               </Button>
             </div>
           </div>
@@ -809,7 +1272,7 @@ function AccountPage() {
       {/* FULL-SIZE IMAGE PREVIEW LIGHTBOX */}
       {activePreviewImage && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-80 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setActivePreviewImage(null)}
         >
           <button
@@ -828,6 +1291,12 @@ function AccountPage() {
           />
         </div>
       )}
+
+      {/* Review Submission Modal */}
+      <ReviewSubmissionModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+      />
     </div>
   );
 }

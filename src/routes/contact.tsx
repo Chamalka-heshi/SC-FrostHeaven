@@ -1,10 +1,13 @@
+import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Mail, MapPin, Phone } from "lucide-react";
+import { Mail, MapPin, Phone, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -27,10 +30,67 @@ export const Route = createFileRoute("/contact")({
 });
 
 function ContactPage() {
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const { user, profile } = useAuth();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Autofill user profile data if available
+  useEffect(() => {
+    if (profile) {
+      if (profile.full_name && !name) setName(profile.full_name);
+      if (profile.email && !email) setEmail(profile.email);
+      if (profile.phone && !phone) setPhone(profile.phone);
+    } else if (user?.email && !email) {
+      setEmail(user.email);
+    }
+  }, [profile, user]);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast.success("Message sent! We'll get back to you soon.");
-    e.currentTarget.reset();
+
+    if (!name.trim()) {
+      toast.error("Please provide your name.");
+      return;
+    }
+    if (!email.trim()) {
+      toast.error("Please provide your email address.");
+      return;
+    }
+    if (!message.trim()) {
+      toast.error("Please enter your message.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from("contact_inquiries").insert({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim() || null,
+        message: message.trim(),
+        status: "unread",
+      });
+
+      if (error) throw error;
+
+      toast.success("Message sent successfully! Our bakery team will get back to you soon.");
+      setMessage("");
+      // Retain name/email if user is logged in, otherwise reset
+      if (!user) {
+        setName("");
+        setEmail("");
+        setPhone("");
+      }
+    } catch (err: any) {
+      console.error("Inquiry submission error:", err);
+      toast.error(err.message || "Failed to send message. Please try again or contact us directly.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -79,35 +139,70 @@ function ContactPage() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
+        <form onSubmit={handleSubmit} className="space-y-5 rounded-3xl bg-card p-8 shadow-soft border border-border/70">
           <div className="space-y-2">
-            <Label htmlFor="contact-name">Name</Label>
-            <Input id="contact-name" placeholder="Your name" className="rounded-xl" />
+            <Label htmlFor="contact-name">Name *</Label>
+            <Input
+              id="contact-name"
+              placeholder="Your name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="rounded-xl"
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="contact-email">Email</Label>
+            <Label htmlFor="contact-email">Email *</Label>
             <Input
               id="contact-email"
               type="email"
               placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
               className="rounded-xl"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="contact-message">Message</Label>
+            <Label htmlFor="contact-phone">Phone (Optional)</Label>
+            <Input
+              id="contact-phone"
+              type="tel"
+              placeholder="+94 77 123 4567"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="rounded-xl"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="contact-message">Message *</Label>
             <Textarea
               id="contact-message"
-              placeholder="How can we help?"
+              placeholder="How can we help you today?"
               rows={5}
-              className="rounded-xl"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              required
+              className="rounded-xl resize-none"
             />
           </div>
           <Button
             type="submit"
-            className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={isSubmitting}
+            className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90 gap-2 cursor-pointer"
             size="lg"
           >
-            Send Message
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Sending Message...</span>
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                <span>Send Message</span>
+              </>
+            )}
           </Button>
         </form>
       </div>

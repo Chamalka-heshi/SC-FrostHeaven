@@ -41,11 +41,11 @@ function ContactPage() {
   // Autofill user profile data if available
   useEffect(() => {
     if (profile) {
-      if (profile.full_name && !name) setName(profile.full_name);
-      if (profile.email && !email) setEmail(profile.email);
-      if (profile.phone && !phone) setPhone(profile.phone);
-    } else if (user?.email && !email) {
-      setEmail(user.email);
+      if (profile.full_name) setName((prev) => prev || profile.full_name || "");
+      if (profile.email) setEmail((prev) => prev || profile.email || "");
+      if (profile.phone) setPhone((prev) => prev || profile.phone || "");
+    } else if (user?.email) {
+      setEmail((prev) => prev || user.email || "");
     }
   }, [profile, user]);
 
@@ -85,9 +85,9 @@ function ContactPage() {
         setEmail("");
         setPhone("");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Inquiry submission error:", err);
-      toast.error(err.message || "Failed to send message. Please try again or contact us directly.");
+      toast.error(err instanceof Error ? err.message : "Failed to send message. Please try again or contact us directly.");
     } finally {
       setIsSubmitting(false);
     }

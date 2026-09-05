@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -105,9 +106,9 @@ function AdminDashboardIndex() {
       if (isManual) {
         toast.success("Dashboard data refreshed.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Dashboard data fetch error:", err);
-      setErrorMessage(err.message || "Unable to load dashboard data.");
+      setErrorMessage(err instanceof Error ? err.message : "Unable to load dashboard data.");
       toast.error("Could not load dashboard data from Supabase.");
     } finally {
       setLoadingData(false);

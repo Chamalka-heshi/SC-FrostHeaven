@@ -21,9 +21,11 @@ import {
   Sparkles,
   Calendar,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { exportToCsv } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/admin/reviews")({
   head: () => ({
@@ -93,7 +95,9 @@ function AdminReviewsPage() {
     try {
       const { data, error } = await supabase
         .from("reviews")
-        .select("id, customer_id, customer_name, rating, comment, occasion, is_approved, created_at")
+        .select(
+          "id, customer_id, customer_name, rating, comment, occasion, is_approved, created_at",
+        )
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -104,9 +108,9 @@ function AdminReviewsPage() {
       if (isManual) {
         toast.success("Reviews refreshed.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Reviews fetch error:", err);
-      setErrorMessage(err.message || "Unable to load customer reviews.");
+      setErrorMessage(err instanceof Error ? err.message : "Unable to load customer reviews.");
       toast.error("Could not load reviews from Supabase.");
     } finally {
       setLoadingData(false);
@@ -133,17 +137,21 @@ function AdminReviewsPage() {
 
       // Update state locally
       setReviews((prev) =>
-        prev.map((rev) => (rev.id === reviewId ? { ...rev, is_approved: newApprovedState } : rev))
+        prev.map((rev) => (rev.id === reviewId ? { ...rev, is_approved: newApprovedState } : rev)),
       );
 
       if (selectedReview && selectedReview.id === reviewId) {
         setSelectedReview((prev) => (prev ? { ...prev, is_approved: newApprovedState } : null));
       }
 
-      toast.success(newApprovedState ? "Review approved and published to website." : "Review hidden from website.");
-    } catch (err: any) {
+      toast.success(
+        newApprovedState
+          ? "Review approved and published to website."
+          : "Review hidden from website.",
+      );
+    } catch (err: unknown) {
       console.error("Approval update error:", err);
-      toast.error(err.message || "Failed to update review status.");
+      toast.error(err instanceof Error ? err.message : "Failed to update review status.");
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -155,10 +163,7 @@ function AdminReviewsPage() {
     setIsDeleting(true);
 
     try {
-      const { error } = await supabase
-        .from("reviews")
-        .delete()
-        .eq("id", reviewToDelete.id);
+      const { error } = await supabase.from("reviews").delete().eq("id", reviewToDelete.id);
 
       if (error) throw error;
 
@@ -171,9 +176,9 @@ function AdminReviewsPage() {
 
       toast.success("Review deleted successfully.");
       setReviewToDelete(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Delete review error:", err);
-      toast.error(err.message || "Failed to delete review.");
+      toast.error(err instanceof Error ? err.message : "Failed to delete review.");
     } finally {
       setIsDeleting(false);
     }
@@ -184,7 +189,8 @@ function AdminReviewsPage() {
     const total = reviews.length;
     const pending = reviews.filter((r) => !r.is_approved).length;
     const approved = reviews.filter((r) => r.is_approved).length;
-    const avg = total > 0 ? (reviews.reduce((acc, r) => acc + (r.rating || 0), 0) / total).toFixed(1) : "0.0";
+    const avg =
+      total > 0 ? (reviews.reduce((acc, r) => acc + (r.rating || 0), 0) / total).toFixed(1) : "0.0";
 
     return { total, pending, approved, avg };
   }, [reviews]);
@@ -244,6 +250,32 @@ function AdminReviewsPage() {
       });
   }, [reviews, searchQuery, statusFilter, ratingFilter, sortOption]);
 
+  const handleExportReviewsCsv = () => {
+    const headers = [
+      "Review ID",
+      "Customer ID",
+      "Customer Name",
+      "Rating",
+      "Occasion",
+      "Comment",
+      "Approved",
+      "Submitted Date",
+    ];
+    const rows = reviews.map((r) => [
+      r.id,
+      r.customer_id || "",
+      r.customer_name,
+      r.rating,
+      r.occasion || "",
+      r.comment,
+      r.is_approved ? "Yes" : "No",
+      r.created_at,
+    ]);
+    const dateStamp = new Date().toISOString().split("T")[0];
+    exportToCsv(`reviews-${dateStamp}.csv`, headers, rows);
+    toast.success("Reviews exported to CSV.");
+  };
+
   // Helper: Status badge renderer
   const renderStatusBadge = (isApproved: boolean) => {
     if (isApproved) {
@@ -278,11 +310,15 @@ function AdminReviewsPage() {
 
   const getInitials = (name: string) => {
     if (name && name.trim()) {
-      const parts = name.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      const first = parts[0] ?? "";
+      const second = parts[1] ?? "";
+      if (first && second) {
+        return `${first.charAt(0)}${second.charAt(0)}`.toUpperCase();
       }
-      return parts[0].slice(0, 2).toUpperCase();
+      if (first) {
+        return first.slice(0, 2).toUpperCase();
+      }
     }
     return "RV";
   };
@@ -326,11 +362,22 @@ function AdminReviewsPage() {
           )}
           <Button
             variant="outline"
+            onClick={handleExportReviewsCsv}
+            disabled={loadingData || reviews.length === 0}
+            className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-primary" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => fetchReviews(true)}
             disabled={isRefreshing}
             className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+            />
             <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
         </div>
@@ -341,7 +388,9 @@ function AdminReviewsPage() {
         <div className="rounded-3xl bg-destructive/10 p-6 text-center shadow-soft border border-destructive/20 space-y-3">
           <AlertCircle className="mx-auto h-8 w-8 text-destructive" />
           <div>
-            <h3 className="text-sm font-medium text-destructive">Unable to load customer reviews</h3>
+            <h3 className="text-sm font-medium text-destructive">
+              Unable to load customer reviews
+            </h3>
             <p className="text-xs text-muted-foreground mt-0.5">{errorMessage}</p>
           </div>
           <Button
@@ -362,7 +411,11 @@ function AdminReviewsPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Total Reviews</span>
             <p className="text-2xl font-bold text-foreground mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.total}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.total
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">All customer feedback</p>
           </div>
@@ -376,7 +429,11 @@ function AdminReviewsPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Pending Approval</span>
             <p className="text-2xl font-bold text-amber-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.pending}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.pending
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Awaiting moderation</p>
           </div>
@@ -390,7 +447,11 @@ function AdminReviewsPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Approved & Published</span>
             <p className="text-2xl font-bold text-emerald-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.approved}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.approved
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Live on testimonials page</p>
           </div>
@@ -404,7 +465,11 @@ function AdminReviewsPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Average Rating</span>
             <p className="text-2xl font-bold text-foreground mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : `${metrics.avg} / 5.0`}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                `${metrics.avg} / 5.0`
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Across all reviews</p>
           </div>
@@ -441,7 +506,7 @@ function AdminReviewsPage() {
           <div>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
+              onChange={(e) => setStatusFilter(e.target.value as "all" | "pending" | "approved")}
               className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
               <option value="all">All Moderation ({reviews.length})</option>
@@ -454,7 +519,9 @@ function AdminReviewsPage() {
           <div>
             <select
               value={ratingFilter}
-              onChange={(e) => setRatingFilter(e.target.value as any)}
+              onChange={(e) =>
+                setRatingFilter(e.target.value as "all" | "1" | "2" | "3" | "4" | "5")
+              }
               className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
               <option value="all">All Ratings (1–5 Stars)</option>
@@ -511,7 +578,17 @@ function AdminReviewsPage() {
             </span>
             <select
               value={sortOption}
-              onChange={(e) => setSortOption(e.target.value as any)}
+              onChange={(e) =>
+                setSortOption(
+                  e.target.value as
+                    | "newest"
+                    | "oldest"
+                    | "pending_first"
+                    | "highest_rating"
+                    | "lowest_rating"
+                    | "name_asc",
+                )
+              }
               className="rounded-xl border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none cursor-pointer"
             >
               <option value="newest">Newest First</option>
@@ -615,7 +692,9 @@ function AdminReviewsPage() {
                                 <Star
                                   key={j}
                                   className={`h-3.5 w-3.5 ${
-                                    j < review.rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                                    j < review.rating
+                                      ? "fill-amber-500 text-amber-500"
+                                      : "text-muted-foreground/30"
                                   }`}
                                 />
                               ))}
@@ -639,7 +718,9 @@ function AdminReviewsPage() {
 
                         {/* Comment Preview Column */}
                         <td className="py-4 px-3 text-xs text-foreground max-w-xs">
-                          <p className="truncate line-clamp-1 italic">&ldquo;{review.comment}&rdquo;</p>
+                          <p className="truncate line-clamp-1 italic">
+                            &ldquo;{review.comment}&rdquo;
+                          </p>
                         </td>
 
                         {/* Submitted Column */}
@@ -648,9 +729,7 @@ function AdminReviewsPage() {
                         </td>
 
                         {/* Status Column */}
-                        <td className="py-4 px-3">
-                          {renderStatusBadge(review.is_approved)}
-                        </td>
+                        <td className="py-4 px-3">{renderStatusBadge(review.is_approved)}</td>
 
                         {/* Moderation Actions Column */}
                         <td className="py-4 pl-3 pr-6 text-right">
@@ -725,7 +804,9 @@ function AdminReviewsPage() {
                           {initials}
                         </div>
                         <div>
-                          <h3 className="font-medium text-foreground text-sm">{review.customer_name}</h3>
+                          <h3 className="font-medium text-foreground text-sm">
+                            {review.customer_name}
+                          </h3>
                           <span className="font-mono text-[10px] text-muted-foreground">
                             #{review.id.slice(0, 8)}
                           </span>
@@ -741,11 +822,15 @@ function AdminReviewsPage() {
                           <Star
                             key={j}
                             className={`h-4 w-4 ${
-                              j < review.rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                              j < review.rating
+                                ? "fill-amber-500 text-amber-500"
+                                : "text-muted-foreground/30"
                             }`}
                           />
                         ))}
-                        <span className="text-xs font-bold text-foreground ml-1">{review.rating} / 5</span>
+                        <span className="text-xs font-bold text-foreground ml-1">
+                          {review.rating} / 5
+                        </span>
                       </div>
 
                       {review.occasion && (
@@ -825,7 +910,9 @@ function AdminReviewsPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-medium text-foreground">{selectedReview.customer_name}</h2>
+                    <h2 className="text-lg font-medium text-foreground">
+                      {selectedReview.customer_name}
+                    </h2>
                     {renderStatusBadge(selectedReview.is_approved)}
                   </div>
                   <span className="font-mono text-xs text-muted-foreground">
@@ -855,12 +942,16 @@ function AdminReviewsPage() {
                         <Star
                           key={j}
                           className={`h-4 w-4 ${
-                            j < selectedReview.rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                            j < selectedReview.rating
+                              ? "fill-amber-500 text-amber-500"
+                              : "text-muted-foreground/30"
                           }`}
                         />
                       ))}
                     </div>
-                    <span className="font-bold text-foreground text-sm">{selectedReview.rating} of 5 Stars</span>
+                    <span className="font-bold text-foreground text-sm">
+                      {selectedReview.rating} of 5 Stars
+                    </span>
                   </div>
                 </div>
 
@@ -881,7 +972,9 @@ function AdminReviewsPage() {
                 <div>
                   <span className="text-muted-foreground">Customer Profile ID:</span>
                   <p className="font-mono text-xs text-muted-foreground mt-0.5">
-                    {selectedReview.customer_id ? `#${selectedReview.customer_id.slice(0, 12)}...` : "Guest Review"}
+                    {selectedReview.customer_id
+                      ? `#${selectedReview.customer_id.slice(0, 12)}...`
+                      : "Guest Review"}
                   </p>
                 </div>
               </div>
@@ -948,7 +1041,10 @@ function AdminReviewsPage() {
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
               <span className="text-xs text-muted-foreground">
-                Status: <span className="font-semibold text-foreground uppercase">{selectedReview.is_approved ? "Approved" : "Pending"}</span>
+                Status:{" "}
+                <span className="font-semibold text-foreground uppercase">
+                  {selectedReview.is_approved ? "Approved" : "Pending"}
+                </span>
               </span>
               <Button
                 variant="outline"
@@ -971,7 +1067,9 @@ function AdminReviewsPage() {
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-foreground">Delete Review Permanently?</h3>
+                <h3 className="text-base font-semibold text-foreground">
+                  Delete Review Permanently?
+                </h3>
                 <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
               </div>
             </div>

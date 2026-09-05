@@ -75,7 +75,7 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
 
     const customerName =
       profile?.full_name?.trim() ||
-      user.user_metadata?.full_name?.trim() ||
+      (typeof user.user_metadata?.["full_name"] === "string" ? user.user_metadata["full_name"].trim() : "") ||
       user.email?.split("@")[0] ||
       "Valued Customer";
 
@@ -96,9 +96,9 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
       toast.success("Thank you for your review! It has been submitted for approval by our bakery team.");
       if (onSuccess) onSuccess();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Review submission error:", err);
-      toast.error(err.message || "Unable to submit your review. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Unable to submit your review. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

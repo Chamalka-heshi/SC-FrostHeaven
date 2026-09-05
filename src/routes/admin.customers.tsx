@@ -31,9 +31,11 @@ import {
   BadgePercent,
   XCircle,
   Inbox,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { exportToCsv } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/admin/customers")({
   head: () => ({
@@ -79,15 +81,78 @@ interface EnrichedCustomer extends CustomerProfile {
 }
 
 const ALL_STATUSES = [
-  { key: "submitted", label: "Submitted", color: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  { key: "under_review", label: "Under Review", color: "bg-indigo-500", text: "text-indigo-700", bg: "bg-indigo-500/10", border: "border-indigo-500/20" },
-  { key: "quoted", label: "Quoted", color: "bg-sky-500", text: "text-sky-700", bg: "bg-sky-500/10", border: "border-sky-500/20" },
-  { key: "accepted", label: "Accepted", color: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  { key: "in_baking", label: "In Baking", color: "bg-purple-500", text: "text-purple-700", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-  { key: "ready", label: "Ready", color: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-500/10", border: "border-teal-500/20" },
-  { key: "completed", label: "Completed", color: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  { key: "declined", label: "Declined", color: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  { key: "cancelled", label: "Cancelled", color: "bg-zinc-500", text: "text-zinc-700", bg: "bg-zinc-500/10", border: "border-zinc-500/20" },
+  {
+    key: "submitted",
+    label: "Submitted",
+    color: "bg-amber-500",
+    text: "text-amber-700",
+    bg: "bg-amber-500/10",
+    border: "border-amber-500/20",
+  },
+  {
+    key: "under_review",
+    label: "Under Review",
+    color: "bg-indigo-500",
+    text: "text-indigo-700",
+    bg: "bg-indigo-500/10",
+    border: "border-indigo-500/20",
+  },
+  {
+    key: "quoted",
+    label: "Quoted",
+    color: "bg-sky-500",
+    text: "text-sky-700",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/20",
+  },
+  {
+    key: "accepted",
+    label: "Accepted",
+    color: "bg-blue-500",
+    text: "text-blue-700",
+    bg: "bg-blue-500/10",
+    border: "border-blue-500/20",
+  },
+  {
+    key: "in_baking",
+    label: "In Baking",
+    color: "bg-purple-500",
+    text: "text-purple-700",
+    bg: "bg-purple-500/10",
+    border: "border-purple-500/20",
+  },
+  {
+    key: "ready",
+    label: "Ready",
+    color: "bg-teal-500",
+    text: "text-teal-700",
+    bg: "bg-teal-500/10",
+    border: "border-teal-500/20",
+  },
+  {
+    key: "completed",
+    label: "Completed",
+    color: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-500/10",
+    border: "border-emerald-500/20",
+  },
+  {
+    key: "declined",
+    label: "Declined",
+    color: "bg-rose-500",
+    text: "text-rose-700",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/20",
+  },
+  {
+    key: "cancelled",
+    label: "Cancelled",
+    color: "bg-zinc-500",
+    text: "text-zinc-700",
+    bg: "bg-zinc-500/10",
+    border: "border-zinc-500/20",
+  },
 ] as const;
 
 function AdminCustomersPage() {
@@ -139,7 +204,7 @@ function AdminCustomersPage() {
         supabase
           .from("custom_orders")
           .select(
-            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at"
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
           )
           .order("created_at", { ascending: false }),
       ]);
@@ -154,9 +219,9 @@ function AdminCustomersPage() {
       if (isManual) {
         toast.success("Customer directory refreshed.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Customer data fetch error:", err);
-      setErrorMessage(err.message || "Unable to load customer directory.");
+      setErrorMessage(err instanceof Error ? err.message : "Unable to load customer directory.");
       toast.error("Could not fetch customer data from Supabase.");
     } finally {
       setLoadingData(false);
@@ -174,7 +239,7 @@ function AdminCustomersPage() {
   const enrichedCustomers: EnrichedCustomer[] = useMemo(() => {
     return customers.map((c) => {
       const customerOrders = orders.filter((o) => o.customer_id === c.id);
-      const latestOrder = customerOrders.length > 0 ? customerOrders[0] : null;
+      const latestOrder = customerOrders.length > 0 ? (customerOrders[0] ?? null) : null;
       return {
         ...c,
         orders: customerOrders,
@@ -270,6 +335,38 @@ function AdminCustomersPage() {
       });
   }, [enrichedCustomers, searchQuery, orderFilter, cityFilter, sortOption]);
 
+  const handleExportCustomersCsv = () => {
+    const headers = [
+      "Customer ID",
+      "Full Name",
+      "Email",
+      "Phone",
+      "City",
+      "Address",
+      "Role",
+      "Total Orders",
+      "Latest Order ID",
+      "Latest Order Status",
+      "Registered Date",
+    ];
+    const rows = enrichedCustomers.map((c) => [
+      c.id,
+      c.full_name || "",
+      c.email || "",
+      c.phone || "",
+      c.city || "",
+      c.address || "",
+      c.role,
+      c.ordersCount,
+      c.latestOrder?.id || "",
+      c.latestOrder?.status || "",
+      c.created_at,
+    ]);
+    const dateStamp = new Date().toISOString().split("T")[0];
+    exportToCsv(`customers-${dateStamp}.csv`, headers, rows);
+    toast.success("Customer directory exported to CSV.");
+  };
+
   // Helper: Status badge renderer
   const renderStatusBadge = (status: string) => {
     const s = status.toLowerCase();
@@ -362,11 +459,15 @@ function AdminCustomersPage() {
   // Helper: Initials Generator
   const getInitials = (name?: string | null, email?: string | null) => {
     if (name && name.trim()) {
-      const parts = name.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      const first = parts[0] ?? "";
+      const second = parts[1] ?? "";
+      if (first && second) {
+        return `${first.charAt(0)}${second.charAt(0)}`.toUpperCase();
       }
-      return parts[0].slice(0, 2).toUpperCase();
+      if (first) {
+        return first.slice(0, 2).toUpperCase();
+      }
     }
     if (email) {
       return email.slice(0, 2).toUpperCase();
@@ -413,11 +514,22 @@ function AdminCustomersPage() {
           )}
           <Button
             variant="outline"
+            onClick={handleExportCustomersCsv}
+            disabled={loadingData || enrichedCustomers.length === 0}
+            className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-primary" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => fetchCustomerData(true)}
             disabled={isRefreshing}
             className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+            />
             <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
         </div>
@@ -428,7 +540,9 @@ function AdminCustomersPage() {
         <div className="rounded-3xl bg-destructive/10 p-6 text-center shadow-soft border border-destructive/20 space-y-3">
           <AlertCircle className="mx-auto h-8 w-8 text-destructive" />
           <div>
-            <h3 className="text-sm font-medium text-destructive">Unable to load customer directory</h3>
+            <h3 className="text-sm font-medium text-destructive">
+              Unable to load customer directory
+            </h3>
             <p className="text-xs text-muted-foreground mt-0.5">{errorMessage}</p>
           </div>
           <Button
@@ -449,7 +563,11 @@ function AdminCustomersPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Total Customers</span>
             <p className="text-2xl font-bold text-foreground mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.total}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.total
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Registered accounts</p>
           </div>
@@ -463,7 +581,11 @@ function AdminCustomersPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">With Orders</span>
             <p className="text-2xl font-bold text-emerald-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.withOrders}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.withOrders
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Placed ≥ 1 custom order</p>
           </div>
@@ -477,7 +599,11 @@ function AdminCustomersPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Without Orders</span>
             <p className="text-2xl font-bold text-muted-foreground mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.withoutOrders}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.withoutOrders
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Zero custom orders</p>
           </div>
@@ -491,7 +617,11 @@ function AdminCustomersPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">New (Last 30 Days)</span>
             <p className="text-2xl font-bold text-primary mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.newLast30Days}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.newLast30Days
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Recent account signups</p>
           </div>
@@ -528,7 +658,9 @@ function AdminCustomersPage() {
           <div>
             <select
               value={orderFilter}
-              onChange={(e) => setOrderFilter(e.target.value as any)}
+              onChange={(e) =>
+                setOrderFilter(e.target.value as "all" | "with_orders" | "without_orders")
+              }
               className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
               <option value="all">All Engagement ({enrichedCustomers.length})</option>
@@ -544,7 +676,9 @@ function AdminCustomersPage() {
               onChange={(e) => setCityFilter(e.target.value)}
               className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
-              <option value="all">All Cities ({availableCities.length > 0 ? "Filtered" : "All"})</option>
+              <option value="all">
+                All Cities ({availableCities.length > 0 ? "Filtered" : "All"})
+              </option>
               {availableCities.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -566,7 +700,12 @@ function AdminCustomersPage() {
             </span>
             <select
               value={sortOption}
-              onChange={(e) => setSortOption(e.target.value as any)}
+              onChange={(e) =>
+                setSortOption(
+                  e.target.value as
+                    "joined_desc" | "joined_asc" | "name_asc" | "name_desc" | "orders_desc",
+                )
+              }
               className="rounded-xl border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none cursor-pointer"
             >
               <option value="joined_desc">Joined Date (Newest First)</option>
@@ -585,7 +724,9 @@ function AdminCustomersPage() {
         {loadingData ? (
           <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-20 shadow-soft border border-border/60">
             <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-            <p className="text-sm text-muted-foreground">Loading customer directory from Supabase...</p>
+            <p className="text-sm text-muted-foreground">
+              Loading customer directory from Supabase...
+            </p>
           </div>
         ) : filteredCustomers.length === 0 ? (
           <div className="rounded-3xl bg-card p-12 text-center shadow-soft border border-border/60 space-y-4">
@@ -805,11 +946,15 @@ function AdminCustomersPage() {
                     <div className="grid grid-cols-2 gap-2 text-xs rounded-2xl bg-secondary/30 p-3">
                       <div>
                         <span className="text-muted-foreground">Phone:</span>
-                        <p className="font-medium text-foreground">{customer.phone || "Not provided"}</p>
+                        <p className="font-medium text-foreground">
+                          {customer.phone || "Not provided"}
+                        </p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">City:</span>
-                        <p className="font-medium text-foreground">{customer.city || "Not provided"}</p>
+                        <p className="font-medium text-foreground">
+                          {customer.city || "Not provided"}
+                        </p>
                       </div>
                     </div>
 
@@ -884,7 +1029,10 @@ function AdminCustomersPage() {
                     <span className="text-muted-foreground">Email Address:</span>
                     <p className="font-semibold text-foreground text-sm mt-0.5">
                       {selectedCustomer.email ? (
-                        <a href={`mailto:${selectedCustomer.email}`} className="text-primary hover:underline">
+                        <a
+                          href={`mailto:${selectedCustomer.email}`}
+                          className="text-primary hover:underline"
+                        >
                           {selectedCustomer.email}
                         </a>
                       ) : (
@@ -976,7 +1124,9 @@ function AdminCustomersPage() {
                   <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center text-xs text-muted-foreground space-y-1">
                     <ShoppingBag className="mx-auto h-6 w-6 text-muted-foreground mb-1" />
                     <p className="font-medium text-foreground">No custom orders yet.</p>
-                    <p className="text-[11px]">This customer has not placed any custom cake orders.</p>
+                    <p className="text-[11px]">
+                      This customer has not placed any custom cake orders.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -990,7 +1140,9 @@ function AdminCustomersPage() {
                             <span className="font-mono text-xs font-bold text-foreground">
                               #{order.id.slice(0, 8)}
                             </span>
-                            <span className="font-medium text-xs text-foreground">• {order.event_type}</span>
+                            <span className="font-medium text-xs text-foreground">
+                              • {order.event_type}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             {renderStatusBadge(order.status)}
@@ -1038,7 +1190,10 @@ function AdminCustomersPage() {
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
               <span className="text-xs text-muted-foreground">
-                Customer ID: <span className="font-mono text-foreground">{selectedCustomer.id.slice(0, 8)}...</span>
+                Customer ID:{" "}
+                <span className="font-mono text-foreground">
+                  {selectedCustomer.id.slice(0, 8)}...
+                </span>
               </span>
               <Button
                 variant="outline"

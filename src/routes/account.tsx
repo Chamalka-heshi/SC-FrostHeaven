@@ -36,12 +36,12 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { ReviewSubmissionModal } from "@/components/review-submission-modal";
-import {
-  CustomOrderTimeline,
-  STATUS_LABELS,
-} from "@/components/custom-order-timeline";
+import { CustomOrderTimeline, STATUS_LABELS } from "@/components/custom-order-timeline";
 
 export const Route = createFileRoute("/account")({
+  validateSearch: (search: Record<string, unknown>): { orderId?: string | undefined } => ({
+    orderId: typeof search["orderId"] === "string" ? search["orderId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "My Account — SC Frost Heaven" },
@@ -84,6 +84,8 @@ const PAST_STATUSES = ["completed", "declined", "cancelled"];
 
 function AccountPage() {
   const navigate = useNavigate();
+  const searchParams = Route.useSearch();
+  const deepLinkedOrderId = searchParams?.orderId;
   const { user, profile, loading: authLoading, refreshProfile, signOut } = useAuth();
 
   const [activeTab, setActiveTab] = useState<"orders" | "profile">("orders");
@@ -151,16 +153,16 @@ function AccountPage() {
       const { data, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at"
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
         )
         .eq("customer_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       setOrders(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading customer orders:", err);
-      setOrdersError(err.message || "Failed to load your orders");
+      setOrdersError(err instanceof Error ? err.message : "Failed to load your orders");
     } finally {
       setLoadingOrders(false);
     }
@@ -176,11 +178,9 @@ function AccountPage() {
   const { filteredOrders, orderCounts } = useMemo(() => {
     const allCount = orders.length;
     const activeCount = orders.filter((o) =>
-      ACTIVE_STATUSES.includes(o.status.toLowerCase())
+      ACTIVE_STATUSES.includes(o.status.toLowerCase()),
     ).length;
-    const pastCount = orders.filter((o) =>
-      PAST_STATUSES.includes(o.status.toLowerCase())
-    ).length;
+    const pastCount = orders.filter((o) => PAST_STATUSES.includes(o.status.toLowerCase())).length;
 
     const query = orderSearch.toLowerCase().trim();
 
@@ -219,47 +219,64 @@ function AccountPage() {
   }, [orders, orderFilter, orderSearch]);
 
   // 4. Order Details & Reference Images Handler with Strict Ownership Verification
-  const handleOpenOrder = async (order: CustomOrder) => {
-    if (!user || order.customer_id !== user.id) {
-      toast.error("Unauthorized access to this order.");
-      return;
-    }
-
-    setSelectedOrder(order);
-    setLoadingImages(true);
-    setOrderImages([]);
-
-    try {
-      const { data: imagesData, error: imagesError } = await supabase
-        .from("custom_order_images")
-        .select("id, order_id, storage_path, file_name, file_size_bytes, created_at")
-        .eq("order_id", order.id);
-
-      if (imagesError) throw imagesError;
-
-      if (imagesData && imagesData.length > 0) {
-        const imagesWithSignedUrls = await Promise.all(
-          imagesData.map(async (img) => {
-            const { data: signedData, error: signedError } = await supabase.storage
-              .from("cake-references")
-              .createSignedUrl(img.storage_path, 3600); // 1 hour validity
-
-            if (signedError) {
-              console.warn(`Signed URL generation error for ${img.file_name}:`, signedError);
-              return { ...img, signedUrl: null };
-            }
-            return { ...img, signedUrl: signedData?.signedUrl ?? null };
-          })
-        );
-        setOrderImages(imagesWithSignedUrls);
+  const handleOpenOrder = useCallback(
+    async (order: CustomOrder) => {
+      if (!user || order.customer_id !== user.id) {
+        toast.error("Unauthorized access to this order.");
+        return;
       }
-    } catch (err: any) {
-      console.error("Error loading order images:", err);
-      toast.error("Could not load reference photos for this order.");
-    } finally {
-      setLoadingImages(false);
+
+      setSelectedOrder(order);
+      setLoadingImages(true);
+      setOrderImages([]);
+
+      try {
+        const { data: imagesData, error: imagesError } = await supabase
+          .from("custom_order_images")
+          .select("id, order_id, storage_path, file_name, file_size_bytes, created_at")
+          .eq("order_id", order.id);
+
+        if (imagesError) throw imagesError;
+
+        if (imagesData && imagesData.length > 0) {
+          const imagesWithSignedUrls = await Promise.all(
+            imagesData.map(async (img) => {
+              const { data: signedData, error: signedError } = await supabase.storage
+                .from("cake-references")
+                .createSignedUrl(img.storage_path, 3600); // 1 hour validity
+
+              if (signedError) {
+                console.warn(`Signed URL generation error for ${img.file_name}:`, signedError);
+                return { ...img, signedUrl: null };
+              }
+              return { ...img, signedUrl: signedData?.signedUrl ?? null };
+            }),
+          );
+          setOrderImages(imagesWithSignedUrls);
+        }
+      } catch (err: unknown) {
+        console.error("Error loading order images:", err);
+        toast.error("Could not load reference photos for this order.");
+      } finally {
+        setLoadingImages(false);
+      }
+    },
+    [user],
+  );
+
+  // Automatically open order details modal if deepLinkedOrderId is provided in route search params
+  useEffect(() => {
+    if (deepLinkedOrderId && orders.length > 0 && !selectedOrder) {
+      const targetOrder = orders.find(
+        (o) =>
+          o.id === deepLinkedOrderId ||
+          o.id.slice(0, 8).toLowerCase() === deepLinkedOrderId.toLowerCase(),
+      );
+      if (targetOrder) {
+        handleOpenOrder(targetOrder);
+      }
     }
-  };
+  }, [deepLinkedOrderId, orders, selectedOrder, handleOpenOrder]);
 
   // 5. Customer Action: Confirm Quote (quoted -> accepted)
   const handleConfirmAcceptQuote = async (order: CustomOrder) => {
@@ -279,16 +296,24 @@ function AccountPage() {
 
       if (error) throw error;
 
-      toast.success("Quote accepted! Your custom cake order has been confirmed with our bakery team.");
+      toast.success(
+        "Quote accepted! Your custom cake order has been confirmed with our bakery team.",
+      );
       setActionConfirmation(null);
       await fetchOrders();
 
       if (selectedOrder && selectedOrder.id === order.id) {
-        setSelectedOrder({ ...selectedOrder, status: "accepted", updated_at: new Date().toISOString() });
+        setSelectedOrder({
+          ...selectedOrder,
+          status: "accepted",
+          updated_at: new Date().toISOString(),
+        });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error accepting quote:", err);
-      toast.error(err.message || "Failed to confirm quote. Please try again.");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to confirm quote. Please try again.",
+      );
     } finally {
       setIsPerformingAction(false);
     }
@@ -317,11 +342,15 @@ function AccountPage() {
       await fetchOrders();
 
       if (selectedOrder && selectedOrder.id === order.id) {
-        setSelectedOrder({ ...selectedOrder, status: "cancelled", updated_at: new Date().toISOString() });
+        setSelectedOrder({
+          ...selectedOrder,
+          status: "cancelled",
+          updated_at: new Date().toISOString(),
+        });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error cancelling order:", err);
-      toast.error(err.message || "Failed to cancel request.");
+      toast.error(err instanceof Error ? err.message : "Failed to cancel request.");
     } finally {
       setIsPerformingAction(false);
     }
@@ -367,9 +396,11 @@ function AccountPage() {
       await refreshProfile();
       setIsEditingProfile(false);
       toast.success("Profile details updated successfully!");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating profile:", err);
-      toast.error(err.message || "Failed to update profile. Please try again.");
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update profile. Please try again.",
+      );
     } finally {
       setIsSavingProfile(false);
     }
@@ -663,7 +694,8 @@ function AccountPage() {
                 </div>
                 <h3 className="text-xl font-medium text-foreground">No Custom Orders Yet</h3>
                 <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                  You haven&apos;t placed any custom cake orders yet. Have an upcoming celebration or dream cake in mind?
+                  You haven&apos;t placed any custom cake orders yet. Have an upcoming celebration
+                  or dream cake in mind?
                 </p>
                 <div className="pt-2">
                   <Link
@@ -758,10 +790,7 @@ function AccountPage() {
 
                       {/* 5-Stage Custom Order Progress Timeline */}
                       <div className="rounded-2xl bg-secondary/20 p-4 sm:p-5 border border-border/50">
-                        <CustomOrderTimeline
-                          status={order.status}
-                          showExplanation={true}
-                        />
+                        <CustomOrderTimeline status={order.status} showExplanation={true} />
                       </div>
 
                       {/* Prominent Quote / Instructions Banner (When Quoted) with Action Buttons */}
@@ -801,7 +830,10 @@ function AccountPage() {
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-border/40">
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>
-                            Contact: <span className="font-medium text-foreground">{order.customer_name}</span>
+                            Contact:{" "}
+                            <span className="font-medium text-foreground">
+                              {order.customer_name}
+                            </span>
                           </span>
                           {/* Cancel button for unbaked non-quoted requests */}
                           {canCancel && !isQuoted && (
@@ -863,7 +895,9 @@ function AccountPage() {
                     <Input
                       id="edit-name"
                       value={profileForm.full_name}
-                      onChange={(e) => setProfileForm({ ...profileForm, full_name: e.target.value })}
+                      onChange={(e) =>
+                        setProfileForm({ ...profileForm, full_name: e.target.value })
+                      }
                       disabled={isSavingProfile}
                       className="rounded-xl"
                       required
@@ -987,7 +1021,9 @@ function AccountPage() {
                 <div className="flex items-start gap-3 rounded-2xl bg-secondary/20 p-4 border border-border/40">
                   <MapPin className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <span className="text-xs font-medium text-muted-foreground">City & Address</span>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      City & Address
+                    </span>
                     <p className="text-sm font-medium text-foreground">
                       {profile?.address
                         ? `${profile.address}${profile.city ? `, ${profile.city}` : ""}`
@@ -1045,10 +1081,7 @@ function AccountPage() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* 5-Stage Custom Order Progress Timeline in Modal */}
               <div className="rounded-2xl bg-secondary/20 p-5 border border-border/50">
-                <CustomOrderTimeline
-                  status={selectedOrder.status}
-                  showExplanation={true}
-                />
+                <CustomOrderTimeline status={selectedOrder.status} showExplanation={true} />
               </div>
 
               {/* Prominent Quote / Instructions Banner with Action Buttons in Modal */}
@@ -1068,7 +1101,9 @@ function AccountPage() {
                     <div className="pt-2 flex flex-wrap items-center gap-2.5">
                       <Button
                         size="sm"
-                        onClick={() => setActionConfirmation({ type: "accept", order: selectedOrder })}
+                        onClick={() =>
+                          setActionConfirmation({ type: "accept", order: selectedOrder })
+                        }
                         className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer font-semibold shadow-xs"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
@@ -1077,7 +1112,9 @@ function AccountPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setActionConfirmation({ type: "cancel", order: selectedOrder })}
+                        onClick={() =>
+                          setActionConfirmation({ type: "cancel", order: selectedOrder })
+                        }
                         className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
                       >
                         <XCircle className="h-3.5 w-3.5 mr-1" />
@@ -1184,7 +1221,10 @@ function AccountPage() {
                 </button>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Status: <span className="font-semibold text-foreground uppercase">{STATUS_LABELS[selectedOrder.status.toLowerCase()] || selectedOrder.status}</span>
+                  Status:{" "}
+                  <span className="font-semibold text-foreground uppercase">
+                    {STATUS_LABELS[selectedOrder.status.toLowerCase()] || selectedOrder.status}
+                  </span>
                 </span>
               )}
               <Button

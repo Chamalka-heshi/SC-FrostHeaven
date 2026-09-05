@@ -22,9 +22,11 @@ import {
   Eye,
   Calendar,
   ExternalLink,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { exportToCsv } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/admin/inquiries")({
   head: () => ({
@@ -47,10 +49,38 @@ export interface ContactInquiry {
 }
 
 const INQUIRY_STATUSES = [
-  { key: "unread", label: "Unread", color: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  { key: "read", label: "Read", color: "bg-indigo-500", text: "text-indigo-700", bg: "bg-indigo-500/10", border: "border-indigo-500/20" },
-  { key: "responded", label: "Responded", color: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  { key: "archived", label: "Archived", color: "bg-zinc-500", text: "text-zinc-700", bg: "bg-zinc-500/10", border: "border-zinc-500/20" },
+  {
+    key: "unread",
+    label: "Unread",
+    color: "bg-amber-500",
+    text: "text-amber-700",
+    bg: "bg-amber-500/10",
+    border: "border-amber-500/20",
+  },
+  {
+    key: "read",
+    label: "Read",
+    color: "bg-indigo-500",
+    text: "text-indigo-700",
+    bg: "bg-indigo-500/10",
+    border: "border-indigo-500/20",
+  },
+  {
+    key: "responded",
+    label: "Responded",
+    color: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-500/10",
+    border: "border-emerald-500/20",
+  },
+  {
+    key: "archived",
+    label: "Archived",
+    color: "bg-zinc-500",
+    text: "text-zinc-700",
+    bg: "bg-zinc-500/10",
+    border: "border-zinc-500/20",
+  },
 ] as const;
 
 function AdminInquiriesPage() {
@@ -65,7 +95,9 @@ function AdminInquiriesPage() {
 
   // Search, Filter & Sort State
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "unread" | "read" | "responded" | "archived">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "unread" | "read" | "responded" | "archived"
+  >("all");
   const [sortOption, setSortOption] = useState<
     "newest" | "oldest" | "unread_first" | "name_asc" | "name_desc"
   >("newest");
@@ -106,9 +138,9 @@ function AdminInquiriesPage() {
       if (isManual) {
         toast.success("Inquiries refreshed.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Inquiries fetch error:", err);
-      setErrorMessage(err.message || "Unable to load customer inquiries.");
+      setErrorMessage(err instanceof Error ? err.message : "Unable to load customer inquiries.");
       toast.error("Could not load inquiries from Supabase.");
     } finally {
       setLoadingData(false);
@@ -135,7 +167,7 @@ function AdminInquiriesPage() {
 
       // Update state locally
       setInquiries((prev) =>
-        prev.map((inq) => (inq.id === inquiryId ? { ...inq, status: newStatus } : inq))
+        prev.map((inq) => (inq.id === inquiryId ? { ...inq, status: newStatus } : inq)),
       );
 
       if (selectedInquiry && selectedInquiry.id === inquiryId) {
@@ -143,9 +175,9 @@ function AdminInquiriesPage() {
       }
 
       toast.success(`Inquiry status updated to ${newStatus}.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Status update error:", err);
-      toast.error(err.message || "Failed to update inquiry status.");
+      toast.error(err instanceof Error ? err.message : "Failed to update inquiry status.");
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -157,7 +189,7 @@ function AdminInquiriesPage() {
     const unread = inquiries.filter((i) => i.status === "unread").length;
     const read = inquiries.filter((i) => i.status === "read").length;
     const respondedOrArchived = inquiries.filter(
-      (i) => i.status === "responded" || i.status === "archived"
+      (i) => i.status === "responded" || i.status === "archived",
     ).length;
 
     return { total, unread, read, respondedOrArchived };
@@ -209,6 +241,30 @@ function AdminInquiriesPage() {
         return 0;
       });
   }, [inquiries, searchQuery, statusFilter, sortOption]);
+
+  const handleExportInquiriesCsv = () => {
+    const headers = [
+      "Inquiry ID",
+      "Customer Name",
+      "Email",
+      "Phone",
+      "Message",
+      "Status",
+      "Received Date",
+    ];
+    const rows = inquiries.map((i) => [
+      i.id,
+      i.name,
+      i.email,
+      i.phone || "",
+      i.message,
+      i.status,
+      i.created_at,
+    ]);
+    const dateStamp = new Date().toISOString().split("T")[0];
+    exportToCsv(`inquiries-${dateStamp}.csv`, headers, rows);
+    toast.success("Inquiries exported to CSV.");
+  };
 
   // Helper: Status badge renderer
   const renderStatusBadge = (status: ContactInquiry["status"]) => {
@@ -282,11 +338,15 @@ function AdminInquiriesPage() {
   // Helper: Initials Generator
   const getInitials = (name: string) => {
     if (name && name.trim()) {
-      const parts = name.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      const first = parts[0] ?? "";
+      const second = parts[1] ?? "";
+      if (first && second) {
+        return `${first.charAt(0)}${second.charAt(0)}`.toUpperCase();
       }
-      return parts[0].slice(0, 2).toUpperCase();
+      if (first) {
+        return first.slice(0, 2).toUpperCase();
+      }
     }
     return "IN";
   };
@@ -309,7 +369,9 @@ function AdminInquiriesPage() {
               <MessageSquare className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-medium text-foreground sm:text-3xl">Inquiry Management</h1>
+              <h1 className="text-2xl font-medium text-foreground sm:text-3xl">
+                Inquiry Management
+              </h1>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Review, triage, and manage customer messages, questions, and custom requests.
               </p>
@@ -330,11 +392,22 @@ function AdminInquiriesPage() {
           )}
           <Button
             variant="outline"
+            onClick={handleExportInquiriesCsv}
+            disabled={loadingData || inquiries.length === 0}
+            className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-primary" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => fetchInquiries(true)}
             disabled={isRefreshing}
             className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+            />
             <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
         </div>
@@ -366,7 +439,11 @@ function AdminInquiriesPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Total Inquiries</span>
             <p className="text-2xl font-bold text-foreground mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.total}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.total
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">All customer messages</p>
           </div>
@@ -380,7 +457,11 @@ function AdminInquiriesPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Unread</span>
             <p className="text-2xl font-bold text-amber-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.unread}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.unread
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Requires initial review</p>
           </div>
@@ -394,7 +475,11 @@ function AdminInquiriesPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Read</span>
             <p className="text-2xl font-bold text-indigo-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.read}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.read
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">In triage / evaluation</p>
           </div>
@@ -408,7 +493,11 @@ function AdminInquiriesPage() {
           <div>
             <span className="text-xs font-medium text-muted-foreground">Responded / Archived</span>
             <p className="text-2xl font-bold text-emerald-700 mt-1">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.respondedOrArchived}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.respondedOrArchived
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Resolved contact items</p>
           </div>
@@ -445,7 +534,7 @@ function AdminInquiriesPage() {
           <div>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
+              onChange={(e) => setStatusFilter(e.target.value as "all" | ContactInquiry["status"])}
               className="w-full rounded-2xl border border-border/70 bg-secondary/20 px-3.5 py-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
             >
               <option value="all">All Statuses ({inquiries.length})</option>
@@ -527,7 +616,11 @@ function AdminInquiriesPage() {
             </span>
             <select
               value={sortOption}
-              onChange={(e) => setSortOption(e.target.value as any)}
+              onChange={(e) =>
+                setSortOption(
+                  e.target.value as "newest" | "oldest" | "unread_first" | "name_asc" | "name_desc",
+                )
+              }
               className="rounded-xl border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none cursor-pointer"
             >
               <option value="newest">Newest First</option>
@@ -658,9 +751,7 @@ function AdminInquiriesPage() {
                         </td>
 
                         {/* Status Column */}
-                        <td className="py-4 px-3">
-                          {renderStatusBadge(inquiry.status)}
-                        </td>
+                        <td className="py-4 px-3">{renderStatusBadge(inquiry.status)}</td>
 
                         {/* Actions Column */}
                         <td className="py-4 pl-3 pr-6 text-right">
@@ -867,9 +958,9 @@ function AdminInquiriesPage() {
                   </span>
                   <a
                     href={`mailto:${selectedInquiry.email}?subject=${encodeURIComponent(
-                      "Re: SC FrostHeaven Inquiry"
+                      "Re: SC FrostHeaven Inquiry",
                     )}&body=${encodeURIComponent(
-                      `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`
+                      `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
                     )}`}
                     onClick={() => {
                       if (selectedInquiry.status !== "responded") {
@@ -883,8 +974,8 @@ function AdminInquiriesPage() {
                   </a>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Clicking &quot;Reply via Email&quot; opens your default mail application prefilled with
-                  the customer&apos;s email address and inquiry context.
+                  Clicking &quot;Reply via Email&quot; opens your default mail application prefilled
+                  with the customer&apos;s email address and inquiry context.
                 </p>
               </div>
             </div>
@@ -892,7 +983,10 @@ function AdminInquiriesPage() {
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
               <span className="text-xs text-muted-foreground">
-                Current Status: <span className="font-semibold text-foreground uppercase">{selectedInquiry.status}</span>
+                Current Status:{" "}
+                <span className="font-semibold text-foreground uppercase">
+                  {selectedInquiry.status}
+                </span>
               </span>
               <Button
                 variant="outline"

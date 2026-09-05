@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ChefHat,
@@ -15,7 +15,10 @@ import {
   Loader2,
   ShieldCheck,
   AlertCircle,
+  Download,
 } from "lucide-react";
+import { exportToCsv } from "@/lib/csv-export";
+import { DailyProductionSummaryModal } from "@/components/daily-production-summary-modal";
 
 export interface KitchenOrder {
   id: string;
@@ -47,18 +50,53 @@ export function KitchenProductionView({
   onPrintTicket,
   updatingOrderId,
 }: KitchenProductionViewProps) {
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+
+  const handleExportKitchenSchedule = () => {
+    const activeOrders = orders.filter((o) => {
+      const s = o.status.toLowerCase();
+      return s !== "completed" && s !== "declined" && s !== "cancelled";
+    });
+    const headers = [
+      "Order ID",
+      "Customer Name",
+      "Customer Email",
+      "Customer Phone",
+      "Event Type",
+      "Event Date",
+      "Status",
+      "Cake Details",
+      "Bakery Notes",
+      "Order Date",
+    ];
+    const rows = activeOrders.map((o) => [
+      o.id,
+      o.customer_name,
+      o.customer_email,
+      o.customer_phone || "",
+      o.event_type,
+      o.event_date,
+      o.status,
+      o.cake_details,
+      o.admin_notes || "",
+      o.created_at,
+    ]);
+    const dateStamp = new Date().toISOString().split("T")[0];
+    exportToCsv(`kitchen-schedule-${dateStamp}.csv`, headers, rows);
+  };
+
   // Categorize orders into kitchen sections
   const { bakingToday, readyToday, tomorrowOrders, upcomingThisWeek, metrics } = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = now.toISOString().split("T")[0] || "";
 
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    const tomorrowStr = tomorrow.toISOString().split("T")[0] || "";
 
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextWeekStr = nextWeek.toISOString().split("T")[0];
+    const nextWeekStr = nextWeek.toISOString().split("T")[0] || "";
 
     const activeBaking: KitchenOrder[] = [];
     const activeReady: KitchenOrder[] = [];
@@ -67,7 +105,11 @@ export function KitchenProductionView({
 
     orders.forEach((order) => {
       const statusLower = order.status.toLowerCase();
-      if (statusLower === "completed" || statusLower === "declined" || statusLower === "cancelled") {
+      if (
+        statusLower === "completed" ||
+        statusLower === "declined" ||
+        statusLower === "cancelled"
+      ) {
         return; // Exclude terminal statuses from active kitchen production board
       }
 
@@ -103,7 +145,8 @@ export function KitchenProductionView({
       tomorrowOrders: tomorrowList,
       upcomingThisWeek: upcomingList,
       metrics: {
-        totalActive: activeBaking.length + activeReady.length + tomorrowList.length + upcomingList.length,
+        totalActive:
+          activeBaking.length + activeReady.length + tomorrowList.length + upcomingList.length,
         bakingNow: activeBaking.length,
         readyNow: activeReady.length,
         upcoming: tomorrowList.length + upcomingList.length,
@@ -147,9 +190,7 @@ export function KitchenProductionView({
             </span>
           </div>
 
-          <h4 className="text-lg font-medium text-foreground">
-            {order.event_type} Celebration
-          </h4>
+          <h4 className="text-lg font-medium text-foreground">{order.event_type} Celebration</h4>
 
           {/* Customer info */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -262,6 +303,36 @@ export function KitchenProductionView({
 
   return (
     <div className="space-y-8">
+      {/* Kitchen Action Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-border/40">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">Kitchen Production Board</h2>
+          <p className="text-xs text-muted-foreground">
+            Live baking queue, decorating station, and daily delivery staging
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSummaryModal(true)}
+            className="rounded-full text-xs h-9 px-4 gap-1.5 border-border/80 text-foreground hover:bg-secondary cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5 text-primary" />
+            <span>Print Daily Run Sheet</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportKitchenSchedule}
+            className="rounded-full text-xs h-9 px-4 gap-1.5 border-border/80 text-foreground hover:bg-secondary cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5 text-primary" />
+            <span>Export Schedule (CSV)</span>
+          </Button>
+        </div>
+      </div>
+
       {/* Daily Production Metrics Header */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70">
@@ -400,6 +471,11 @@ export function KitchenProductionView({
           </div>
         )}
       </div>
+
+      {/* Daily Production Summary Modal (Printable Run Sheet) */}
+      {showSummaryModal && (
+        <DailyProductionSummaryModal orders={orders} onClose={() => setShowSummaryModal(false)} />
+      )}
     </div>
   );
 }

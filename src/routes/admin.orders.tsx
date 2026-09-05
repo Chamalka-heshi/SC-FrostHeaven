@@ -33,11 +33,13 @@ import {
   XCircle,
   Printer,
   SlidersHorizontal,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { KitchenProductionView } from "@/components/kitchen-production-view";
 import { KitchenProductionTicket } from "@/components/kitchen-production-ticket";
+import { exportToCsv } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () => ({
@@ -113,7 +115,9 @@ function AdminOrdersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [eventTypeFilter, setEventTypeFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState<"all" | "upcoming" | "past">("all");
-  const [sortOption, setSortOption] = useState<"newest" | "oldest" | "date_asc" | "date_desc">("newest");
+  const [sortOption, setSortOption] = useState<"newest" | "oldest" | "date_asc" | "date_desc">(
+    "newest",
+  );
 
   // Selected Order Modal state
   const [selectedOrder, setSelectedOrder] = useState<CustomOrder | null>(null);
@@ -153,7 +157,7 @@ function AdminOrdersPage() {
       const { data, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at"
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
         )
         .order("created_at", { ascending: false });
 
@@ -163,9 +167,9 @@ function AdminOrdersPage() {
       if (isManualRefresh) {
         toast.success("Custom orders refreshed.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching admin custom orders:", err);
-      setOrdersError(err.message || "Failed to load custom orders.");
+      setOrdersError(err instanceof Error ? err.message : "Failed to load custom orders.");
       toast.error("Could not fetch orders from Supabase.");
     } finally {
       setLoadingOrders(false);
@@ -218,7 +222,7 @@ function AdminOrdersPage() {
   // 5. Filter & Sort Orders for Table View
   const filteredOrders = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = now.toISOString().split("T")[0] || "";
     const query = searchQuery.toLowerCase().trim();
 
     return orders
@@ -330,11 +334,11 @@ function AdminOrdersPage() {
               return { ...img, signedUrl: null };
             }
             return { ...img, signedUrl: signedData?.signedUrl ?? null };
-          })
+          }),
         );
         setOrderImages(signedImages);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading order images/profile:", err);
       toast.error("Failed to load reference photos.");
     } finally {
@@ -358,15 +362,19 @@ function AdminOrdersPage() {
 
       if (error) throw error;
 
-      const updatedOrder = { ...selectedOrder, status: newStatus, updated_at: new Date().toISOString() };
+      const updatedOrder = {
+        ...selectedOrder,
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
       setSelectedOrder(updatedOrder);
       setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
 
       const label = ORDER_STATUSES.find((s) => s.value === newStatus)?.label || newStatus;
       toast.success(`Order status updated to ${label}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Status update error:", err);
-      toast.error(err.message || "Failed to update order status.");
+      toast.error(err instanceof Error ? err.message : "Failed to update order status.");
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -388,19 +396,23 @@ function AdminOrdersPage() {
 
       setOrders((prev) =>
         prev.map((o) =>
-          o.id === orderId ? { ...o, status: nextStatus, updated_at: new Date().toISOString() } : o
-        )
+          o.id === orderId ? { ...o, status: nextStatus, updated_at: new Date().toISOString() } : o,
+        ),
       );
 
       if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder({ ...selectedOrder, status: nextStatus, updated_at: new Date().toISOString() });
+        setSelectedOrder({
+          ...selectedOrder,
+          status: nextStatus,
+          updated_at: new Date().toISOString(),
+        });
       }
 
       const label = ORDER_STATUSES.find((s) => s.value === nextStatus)?.label || nextStatus;
       toast.success(`Kitchen stage updated to ${label}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Quick status update error:", err);
-      toast.error(err.message || "Failed to update kitchen status.");
+      toast.error(err instanceof Error ? err.message : "Failed to update kitchen status.");
     } finally {
       setUpdatingKitchenOrderId(null);
     }
@@ -423,14 +435,18 @@ function AdminOrdersPage() {
 
       if (error) throw error;
 
-      const updatedOrder = { ...selectedOrder, admin_notes: trimmed || null, updated_at: new Date().toISOString() };
+      const updatedOrder = {
+        ...selectedOrder,
+        admin_notes: trimmed || null,
+        updated_at: new Date().toISOString(),
+      };
       setSelectedOrder(updatedOrder);
       setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
 
       toast.success("Admin notes saved successfully.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Admin notes save error:", err);
-      toast.error(err.message || "Failed to save admin notes.");
+      toast.error(err instanceof Error ? err.message : "Failed to save admin notes.");
     } finally {
       setIsSavingNotes(false);
     }
@@ -454,7 +470,7 @@ function AdminOrdersPage() {
               .from("cake-references")
               .createSignedUrl(img.storage_path, 3600);
             return { ...img, signedUrl: signedData?.signedUrl ?? null };
-          })
+          }),
         );
         setTicketImages(signedImages);
       }
@@ -469,6 +485,41 @@ function AdminOrdersPage() {
     setCopiedId(true);
     toast.success("Full Order UUID copied to clipboard!");
     setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  // 12. Export Custom Orders to CSV
+  const handleExportOrdersCsv = () => {
+    const todayStr = new Date().toISOString().split("T")[0] || "";
+    const headers = [
+      "Order ID",
+      "Customer Name",
+      "Customer Email",
+      "Customer Phone",
+      "Event Type",
+      "Event Date",
+      "Status",
+      "Submission Date",
+      "Updated Date",
+      "Cake Details",
+      "Admin Notes",
+    ];
+
+    const rows = filteredOrders.map((o) => [
+      o.id,
+      o.customer_name,
+      o.customer_email,
+      o.customer_phone || "",
+      o.event_type,
+      o.event_date,
+      o.status,
+      o.created_at,
+      o.updated_at || o.created_at,
+      o.cake_details,
+      o.admin_notes || "",
+    ]);
+
+    exportToCsv(`custom-orders-${todayStr}.csv`, headers, rows);
+    toast.success(`Exported ${filteredOrders.length} custom orders to CSV`);
   };
 
   // Helper: Status badge renderer
@@ -617,15 +668,29 @@ function AdminOrdersPage() {
             </button>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => fetchOrders(true)}
-            disabled={isRefreshing}
-            className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
-            <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExportOrdersCsv}
+              className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer hover:bg-secondary"
+              title="Export filtered custom orders to CSV"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export CSV</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => fetchOrders(true)}
+              disabled={isRefreshing}
+              className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+              />
+              <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -759,7 +824,9 @@ function AdminOrdersPage() {
                     type="button"
                     onClick={() => setDateFilter("all")}
                     className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                      dateFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                      dateFilter === "all"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground"
                     }`}
                   >
                     All Dates
@@ -768,7 +835,9 @@ function AdminOrdersPage() {
                     type="button"
                     onClick={() => setDateFilter("upcoming")}
                     className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                      dateFilter === "upcoming" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                      dateFilter === "upcoming"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground"
                     }`}
                   >
                     Upcoming
@@ -777,7 +846,9 @@ function AdminOrdersPage() {
                     type="button"
                     onClick={() => setDateFilter("past")}
                     className={`rounded-full px-3 py-1 font-medium transition-colors cursor-pointer ${
-                      dateFilter === "past" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                      dateFilter === "past"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground"
                     }`}
                   >
                     Past
@@ -791,7 +862,9 @@ function AdminOrdersPage() {
                 </span>
                 <select
                   value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value as any)}
+                  onChange={(e) =>
+                    setSortOption(e.target.value as "newest" | "oldest" | "date_asc" | "date_desc")
+                  }
                   className="rounded-xl border border-border/60 bg-transparent px-2.5 py-1 text-xs font-medium text-foreground focus:outline-none"
                 >
                   <option value="newest">Order Date: Newest First</option>
@@ -807,13 +880,19 @@ function AdminOrdersPage() {
           {loadingOrders ? (
             <div className="flex flex-col items-center justify-center rounded-3xl bg-card py-20 shadow-soft">
               <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-              <p className="text-sm text-muted-foreground">Loading custom cake orders from Supabase...</p>
+              <p className="text-sm text-muted-foreground">
+                Loading custom cake orders from Supabase...
+              </p>
             </div>
           ) : ordersError ? (
             <div className="rounded-3xl bg-destructive/10 p-8 text-center shadow-soft">
               <AlertCircle className="mx-auto h-8 w-8 text-destructive mb-2" />
               <p className="text-sm font-medium text-destructive">{ordersError}</p>
-              <Button variant="outline" onClick={() => fetchOrders(true)} className="mt-4 rounded-full">
+              <Button
+                variant="outline"
+                onClick={() => fetchOrders(true)}
+                className="mt-4 rounded-full"
+              >
                 Try Again
               </Button>
             </div>
@@ -824,7 +903,8 @@ function AdminOrdersPage() {
               </div>
               <h3 className="text-lg font-medium text-foreground">No custom orders found</h3>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                No orders match your active filter settings. Try clearing search keywords or resetting status filters.
+                No orders match your active filter settings. Try clearing search keywords or
+                resetting status filters.
               </p>
               <Button
                 variant="outline"
@@ -869,7 +949,9 @@ function AdminOrdersPage() {
                         </td>
                         <td className="py-4 px-6">
                           <p className="font-semibold text-foreground">{order.customer_name}</p>
-                          <p className="text-[11px] text-muted-foreground">{order.customer_email}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {order.customer_email}
+                          </p>
                         </td>
                         <td className="py-4 px-6 font-medium text-foreground">
                           {order.event_type}
@@ -880,9 +962,7 @@ function AdminOrdersPage() {
                             {formatDate(order.event_date)}
                           </span>
                         </td>
-                        <td className="py-4 px-6">
-                          {renderStatusBadge(order.status)}
-                        </td>
+                        <td className="py-4 px-6">{renderStatusBadge(order.status)}</td>
                         <td className="py-4 px-6 text-muted-foreground">
                           {formatDate(order.created_at)}
                         </td>
@@ -925,7 +1005,11 @@ function AdminOrdersPage() {
                   className="text-muted-foreground hover:text-foreground transition-colors p-1"
                   title="Copy full UUID"
                 >
-                  {copiedId ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  {copiedId ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
                 </button>
                 {renderStatusBadge(selectedOrder.status)}
               </div>
@@ -1167,7 +1251,8 @@ function AdminOrdersPage() {
             {/* Modal Footer */}
             <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
               <span className="text-xs text-muted-foreground">
-                Order ID: <span className="font-mono text-foreground">#{selectedOrder.id.slice(0, 8)}</span>
+                Order ID:{" "}
+                <span className="font-mono text-foreground">#{selectedOrder.id.slice(0, 8)}</span>
               </span>
               <Button
                 variant="outline"

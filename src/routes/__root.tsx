@@ -18,6 +18,7 @@ import logo from "../assets/logo.png";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CartDrawer } from "@/components/cart-drawer";
 import { useCartSync } from "@/hooks/use-cart-sync";
+import { NotificationCenter } from "@/components/notification-center";
 
 const navLinks = [
   { to: "/", label: "Home" },
@@ -186,7 +187,8 @@ function Header() {
         </nav>
 
         {/* Right Action Icons & Buttons */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {user && <NotificationCenter />}
           <CartDrawer />
 
           {/* Desktop Authentication Controls */}
@@ -265,7 +267,9 @@ function Header() {
                 key={link.to}
                 to={link.to}
                 onClick={() => setMobileMenuOpen(false)}
-                activeProps={{ className: "text-primary font-medium pl-2 border-l-2 border-primary" }}
+                activeProps={{
+                  className: "text-primary font-medium pl-2 border-l-2 border-primary",
+                }}
                 className="text-base font-medium text-foreground/90 transition-colors hover:text-primary"
               >
                 {link.label}

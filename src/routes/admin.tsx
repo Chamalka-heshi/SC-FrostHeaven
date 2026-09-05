@@ -3,6 +3,7 @@ import { createFileRoute, Outlet, Link, useNavigate, useLocation } from "@tansta
 import { toast } from "sonner";
 import {
   LayoutDashboard,
+  BarChart3,
   Cake,
   MessageSquare,
   Star,
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/admin")({
 
 const adminNavLinks = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/admin/orders", label: "Custom Orders", icon: Cake },
   { to: "/admin/inquiries", label: "Inquiries", icon: MessageSquare },
   { to: "/admin/reviews", label: "Reviews", icon: Star },

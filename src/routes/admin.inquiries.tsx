@@ -951,10 +951,10 @@ function AdminInquiriesPage() {
 
               {/* REPLY ACTION */}
               <div className="rounded-2xl bg-blush/30 p-4 border border-blush/60 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <span className="text-xs font-semibold text-blush-foreground flex items-center gap-1.5">
                     <Mail className="h-4 w-4 text-primary" />
-                    Customer Direct Response
+                    Customer Direct Email Response
                   </span>
                   <a
                     href={`mailto:${selectedInquiry.email}?subject=${encodeURIComponent(
@@ -966,16 +966,18 @@ function AdminInquiriesPage() {
                       if (selectedInquiry.status !== "responded") {
                         handleUpdateStatus(selectedInquiry.id, "responded");
                       }
+                      toast.info(`Opening email client to reply to ${selectedInquiry.email}`);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
                   >
                     <Send className="h-3.5 w-3.5" />
-                    <span>Reply via Email</span>
+                    <span>Mark Responded & Open Email</span>
                   </a>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Clicking &quot;Reply via Email&quot; opens your default mail application prefilled
-                  with the customer&apos;s email address and inquiry context.
+                  Clicking &quot;Mark Responded & Open Email&quot; updates the status to Responded
+                  and launches your device&apos;s email client prefilled with the customer&apos;s
+                  email and message details.
                 </p>
               </div>
             </div>

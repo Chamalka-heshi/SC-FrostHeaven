@@ -12,7 +12,9 @@ import { useAuth } from "@/lib/auth-context";
 interface ReviewSubmissionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (() => void) | undefined;
+  defaultOccasion?: string | undefined;
+  defaultCustomerName?: string | undefined;
 }
 
 const COMMON_OCCASIONS = [
@@ -32,13 +34,19 @@ const RATING_LABELS: Record<number, string> = {
   5: "5 Stars — Outstanding!",
 };
 
-export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubmissionModalProps) {
+export function ReviewSubmissionModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  defaultOccasion,
+  defaultCustomerName,
+}: ReviewSubmissionModalProps) {
   const { user, profile, loading: authLoading } = useAuth();
 
   const [rating, setRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [comment, setComment] = useState("");
-  const [occasion, setOccasion] = useState("");
+  const [occasion, setOccasion] = useState(defaultOccasion || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset form when modal opens
@@ -47,9 +55,9 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
       setRating(5);
       setHoverRating(null);
       setComment("");
-      setOccasion("");
+      setOccasion(defaultOccasion || "");
     }
-  }, [isOpen]);
+  }, [isOpen, defaultOccasion]);
 
   if (!isOpen) return null;
 
@@ -74,8 +82,11 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
     }
 
     const customerName =
+      defaultCustomerName?.trim() ||
       profile?.full_name?.trim() ||
-      (typeof user.user_metadata?.["full_name"] === "string" ? user.user_metadata["full_name"].trim() : "") ||
+      (typeof user.user_metadata?.["full_name"] === "string"
+        ? user.user_metadata["full_name"].trim()
+        : "") ||
       user.email?.split("@")[0] ||
       "Valued Customer";
 
@@ -93,12 +104,16 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
 
       if (error) throw error;
 
-      toast.success("Thank you for your review! It has been submitted for approval by our bakery team.");
+      toast.success(
+        "Thank you for your review! It has been submitted for approval by our bakery team.",
+      );
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: unknown) {
       console.error("Review submission error:", err);
-      toast.error(err instanceof Error ? err.message : "Unable to submit your review. Please try again.");
+      toast.error(
+        err instanceof Error ? err.message : "Unable to submit your review. Please try again.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -144,18 +159,28 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
                 <LogIn className="h-6 w-6" />
               </div>
               <div className="space-y-1.5">
-                <h3 className="text-base font-semibold text-foreground">Sign In to Leave a Review</h3>
+                <h3 className="text-base font-semibold text-foreground">
+                  Sign In to Leave a Review
+                </h3>
                 <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  To ensure genuine feedback, please sign in or create an account to share your cake experience with our community.
+                  To ensure genuine feedback, please sign in or create an account to share your cake
+                  experience with our community.
                 </p>
               </div>
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
-                <Button asChild className="rounded-full w-full sm:w-auto px-6 bg-primary text-primary-foreground hover:bg-primary/90">
+                <Button
+                  asChild
+                  className="rounded-full w-full sm:w-auto px-6 bg-primary text-primary-foreground hover:bg-primary/90"
+                >
                   <Link to="/login" onClick={onClose}>
                     Sign In
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="rounded-full w-full sm:w-auto px-6 border-border/80">
+                <Button
+                  asChild
+                  variant="outline"
+                  className="rounded-full w-full sm:w-auto px-6 border-border/80"
+                >
                   <Link to="/register" onClick={onClose}>
                     Create Account
                   </Link>
@@ -201,7 +226,9 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
                         >
                           <Star
                             className={`h-7 w-7 transition-colors ${
-                              isFilled ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                              isFilled
+                                ? "fill-amber-500 text-amber-500"
+                                : "text-muted-foreground/30"
                             }`}
                           />
                         </button>
@@ -216,7 +243,10 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
 
               {/* Occasion / Celebration Type */}
               <div className="space-y-2">
-                <Label htmlFor="occasion-input" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Label
+                  htmlFor="occasion-input"
+                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
                   Celebration Occasion (Optional)
                 </Label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
@@ -250,7 +280,10 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
               {/* Review Comment Textarea */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="comment-textarea" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Label
+                    htmlFor="comment-textarea"
+                    className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
                     Your Review <span className="text-destructive">*</span>
                   </Label>
                   <span className="text-[10px] text-muted-foreground">
@@ -273,7 +306,8 @@ export function ReviewSubmissionModal({ isOpen, onClose, onSuccess }: ReviewSubm
               {/* Moderation notice */}
               <div className="rounded-2xl bg-blush/30 p-3.5 border border-blush/50 text-[11px] text-muted-foreground">
                 <p>
-                  To maintain quality, submitted reviews undergo a quick moderation check before appearing publicly on our testimonials page.
+                  To maintain quality, submitted reviews undergo a quick moderation check before
+                  appearing publicly on our testimonials page.
                 </p>
               </div>
 

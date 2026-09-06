@@ -61,9 +61,11 @@ interface CustomOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  internal_notes?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 interface OrderImage {
@@ -124,7 +126,8 @@ function AdminOrdersPage() {
   const [orderImages, setOrderImages] = useState<OrderImage[]>([]);
   const [loadingImages, setLoadingImages] = useState(false);
   const [activePreviewImage, setActivePreviewImage] = useState<string | null>(null);
-  const [adminNotesText, setAdminNotesText] = useState("");
+  const [customerMessageText, setCustomerMessageText] = useState("");
+  const [internalNotesText, setInternalNotesText] = useState("");
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [customerAddress, setCustomerAddress] = useState<string | null>(null);
@@ -157,7 +160,7 @@ function AdminOrdersPage() {
       const { data, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, created_at, updated_at",
         )
         .order("created_at", { ascending: false });
 
@@ -254,7 +257,9 @@ function AdminOrdersPage() {
           const shortIdMatch = `#${order.id.slice(0, 8).toLowerCase()}`.includes(query);
           const eventMatch = order.event_type?.toLowerCase().includes(query);
           const detailsMatch = order.cake_details?.toLowerCase().includes(query);
-          const notesMatch = order.admin_notes?.toLowerCase().includes(query);
+          const msgMatch = order.customer_message?.toLowerCase().includes(query);
+          const internalMatch = order.internal_notes?.toLowerCase().includes(query);
+          const legacyMatch = order.admin_notes?.toLowerCase().includes(query);
 
           if (
             !nameMatch &&
@@ -264,7 +269,9 @@ function AdminOrdersPage() {
             !shortIdMatch &&
             !eventMatch &&
             !detailsMatch &&
-            !notesMatch
+            !msgMatch &&
+            !internalMatch &&
+            !legacyMatch
           ) {
             return false;
           }
@@ -292,7 +299,8 @@ function AdminOrdersPage() {
   // 6. Order Details & Reference Image Loader
   const handleOpenOrderDetails = async (order: CustomOrder) => {
     setSelectedOrder(order);
-    setAdminNotesText(order.admin_notes || "");
+    setCustomerMessageText(order.customer_message || order.admin_notes || "");
+    setInternalNotesText(order.internal_notes || "");
     setOrderImages([]);
     setCustomerAddress(null);
     setLoadingImages(true);
@@ -424,11 +432,15 @@ function AdminOrdersPage() {
     setIsSavingNotes(true);
 
     try {
-      const trimmed = adminNotesText.trim();
+      const trimmedMessage = customerMessageText.trim() || null;
+      const trimmedInternal = internalNotesText.trim() || null;
+
       const { error } = await supabase
         .from("custom_orders")
         .update({
-          admin_notes: trimmed || null,
+          customer_message: trimmedMessage,
+          internal_notes: trimmedInternal,
+          admin_notes: trimmedMessage, // Mirror to admin_notes for legacy backwards compatibility
           updated_at: new Date().toISOString(),
         })
         .eq("id", selectedOrder.id);
@@ -437,16 +449,18 @@ function AdminOrdersPage() {
 
       const updatedOrder = {
         ...selectedOrder,
-        admin_notes: trimmed || null,
+        customer_message: trimmedMessage,
+        internal_notes: trimmedInternal,
+        admin_notes: trimmedMessage,
         updated_at: new Date().toISOString(),
       };
       setSelectedOrder(updatedOrder);
       setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
 
-      toast.success("Admin notes saved successfully.");
+      toast.success("Customer message and internal bakery notes saved successfully.");
     } catch (err: unknown) {
-      console.error("Admin notes save error:", err);
-      toast.error(err instanceof Error ? err.message : "Failed to save admin notes.");
+      console.error("Notes save error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to save notes.");
     } finally {
       setIsSavingNotes(false);
     }
@@ -501,7 +515,8 @@ function AdminOrdersPage() {
       "Submission Date",
       "Updated Date",
       "Cake Details",
-      "Admin Notes",
+      "Customer Message",
+      "Internal Notes",
     ];
 
     const rows = filteredOrders.map((o) => [
@@ -515,7 +530,8 @@ function AdminOrdersPage() {
       o.created_at,
       o.updated_at || o.created_at,
       o.cake_details,
-      o.admin_notes || "",
+      o.customer_message || o.admin_notes || "",
+      o.internal_notes || "",
     ]);
 
     exportToCsv(`custom-orders-${todayStr}.csv`, headers, rows);
@@ -1161,24 +1177,48 @@ function AdminOrdersPage() {
                 </div>
               </div>
 
-              {/* Admin / Bakery Notes Editor */}
-              <div className="space-y-2 rounded-2xl bg-secondary/20 p-5 border border-border/40">
-                <div className="flex items-center justify-between">
-                  <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                    <ShieldCheck className="h-4 w-4" />
-                    Bakery Notes & Quote Guidance
-                  </h4>
-                  <span className="text-[11px] text-muted-foreground">
-                    Visible to customer on their account page
-                  </span>
+              {/* Customer Message & Internal Bakery Notes Dual Editor */}
+              <div className="space-y-4">
+                {/* Customer Facing Message */}
+                <div className="space-y-2 rounded-2xl bg-primary/5 p-4 sm:p-5 border border-primary/20">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                      <ShieldCheck className="h-4 w-4" />
+                      Message to Customer (Quotation & Updates)
+                    </h4>
+                    <span className="text-[11px] text-muted-foreground font-normal">
+                      Visible to customer on their account order tracking page
+                    </span>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    placeholder="Enter quote pricing details, flavor options, or pickup instructions for the customer..."
+                    value={customerMessageText}
+                    onChange={(e) => setCustomerMessageText(e.target.value)}
+                    className="rounded-2xl bg-card border-border/60 text-xs text-foreground placeholder:text-muted-foreground"
+                  />
                 </div>
-                <Textarea
-                  rows={3}
-                  placeholder="Enter quote pricing details, kitchen instructions, or pickup notes for the customer..."
-                  value={adminNotesText}
-                  onChange={(e) => setAdminNotesText(e.target.value)}
-                  className="rounded-2xl bg-card border-border/60 text-xs"
-                />
+
+                {/* Internal Bakery / Kitchen Notes */}
+                <div className="space-y-2 rounded-2xl bg-secondary/30 p-4 sm:p-5 border border-border/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                      <FileText className="h-4 w-4 text-primary" />
+                      Internal Bakery Notes (Private)
+                    </h4>
+                    <span className="text-[11px] text-muted-foreground font-normal">
+                      Bakery staff & kitchen run sheet only — Never shared with customer
+                    </span>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    placeholder="Enter private kitchen notes, tier assembly details, color mixing ratios, or staff reminders..."
+                    value={internalNotesText}
+                    onChange={(e) => setInternalNotesText(e.target.value)}
+                    className="rounded-2xl bg-card border-border/60 text-xs text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+
                 <div className="flex justify-end pt-1">
                   <Button
                     size="sm"
@@ -1192,7 +1232,7 @@ function AdminOrdersPage() {
                         Saving Notes...
                       </>
                     ) : (
-                      "Save Bakery Notes"
+                      "Save Notes & Message"
                     )}
                   </Button>
                 </div>

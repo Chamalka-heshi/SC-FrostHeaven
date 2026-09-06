@@ -32,6 +32,7 @@ import {
   Filter,
   XCircle,
   HelpCircle,
+  Star,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -64,9 +65,10 @@ interface CustomOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 interface OrderImage {
@@ -113,6 +115,7 @@ function AccountPage() {
 
   // Review submission modal state
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewModalOrder, setReviewModalOrder] = useState<CustomOrder | null>(null);
 
   // Profile edit state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -123,6 +126,9 @@ function AccountPage() {
     address: "",
     city: "",
   });
+
+  // Track whether retroactive guest order linking has already run for this session
+  const [hasCheckedGuestLinking, setHasCheckedGuestLinking] = useState(false);
 
   // 1. Auth Guard Protection: Redirect unauthenticated visitors once auth check is complete
   useEffect(() => {
@@ -151,9 +157,9 @@ function AccountPage() {
 
     try {
       const { data, error } = await supabase
-        .from("custom_orders")
+        .from("customer_custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, created_at, updated_at",
         )
         .eq("customer_id", user.id)
         .order("created_at", { ascending: false });
@@ -167,6 +173,31 @@ function AccountPage() {
       setLoadingOrders(false);
     }
   }, [user]);
+
+  // 2b. Retroactive Guest Order Linking on Account Mount
+  useEffect(() => {
+    if (!user || hasCheckedGuestLinking) return;
+
+    const linkGuestOrders = async () => {
+      try {
+        const { data: linkedCount, error } = await supabase.rpc("link_guest_custom_orders");
+        if (error) {
+          console.warn("Guest order linking notice:", error.message);
+        } else if (typeof linkedCount === "number" && linkedCount > 0) {
+          toast.success(
+            `Linked ${linkedCount} previous custom order${linkedCount > 1 ? "s" : ""} to your account!`,
+          );
+          await fetchOrders();
+        }
+      } catch (err) {
+        console.warn("Unexpected guest linking exception:", err);
+      } finally {
+        setHasCheckedGuestLinking(true);
+      }
+    };
+
+    linkGuestOrders();
+  }, [user, hasCheckedGuestLinking, fetchOrders]);
 
   useEffect(() => {
     if (user) {
@@ -202,7 +233,9 @@ function AccountPage() {
         const idMatch = order.id.toLowerCase().includes(query);
         const shortIdMatch = `#${order.id.slice(0, 8).toLowerCase()}`.includes(query);
         const detailsMatch = (order.cake_details || "").toLowerCase().includes(query);
-        const notesMatch = (order.admin_notes || "").toLowerCase().includes(query);
+        const notesMatch = (order.customer_message || order.admin_notes || "")
+          .toLowerCase()
+          .includes(query);
 
         if (!typeMatch && !dateMatch && !idMatch && !shortIdMatch && !detailsMatch && !notesMatch) {
           return false;
@@ -578,8 +611,8 @@ function AccountPage() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Package className="h-4 w-4" />
-            My Custom Orders
+            <Cake className="h-4 w-4" />
+            Custom Cake Orders
             {orders.length > 0 && (
               <span className="ml-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs text-foreground font-semibold">
                 {orders.length}
@@ -600,9 +633,27 @@ function AccountPage() {
           </button>
         </div>
 
-        {/* TAB 1: MY CUSTOM ORDERS */}
+        {/* TAB 1: CUSTOM CAKE ORDERS */}
         {activeTab === "orders" && (
           <div className="space-y-6">
+            {/* Informational Clarification Card (Shopify vs Custom Cake Orders) */}
+            <div className="rounded-3xl bg-secondary/30 border border-border/80 p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Cake className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold text-foreground">
+                  Custom Cake Requests &amp; Online Store Purchases
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Custom cake requests submitted through FrostHeaven appear here for direct progress
+                  tracking, quote approval, and bakery updates. Standard products purchased through
+                  our online store are processed securely through Shopify. Order confirmations and
+                  receipt details for those purchases are sent directly to your email.
+                </p>
+              </div>
+            </div>
+
             {/* Search & Status Filters Bar */}
             {orders.length > 0 && (
               <div className="rounded-3xl bg-card p-4 sm:p-5 shadow-soft border border-border/70 space-y-4">
@@ -798,10 +849,11 @@ function AccountPage() {
                         <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4">
                           <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
                             <Sparkles className="h-4 w-4 text-amber-600" />
-                            <span>Quotation & Bakery Instructions Ready</span>
+                            <span>Quotation &amp; Bakery Instructions Ready</span>
                           </div>
                           <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                            {order.admin_notes ||
+                            {order.customer_message ||
+                              order.admin_notes ||
                               "Your custom cake request has been reviewed and quoted by our bakery team. Please review the details and click below to confirm your order."}
                           </p>
 
@@ -812,7 +864,7 @@ function AccountPage() {
                               className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer shadow-xs font-semibold"
                             >
                               <CheckCircle2 className="h-4 w-4" />
-                              <span>Accept Quote & Confirm Order</span>
+                              <span>Accept Quote &amp; Confirm Order</span>
                             </Button>
                             <Button
                               variant="outline"
@@ -823,6 +875,49 @@ function AccountPage() {
                               <span>Cancel Request</span>
                             </Button>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Customer Message from FrostHeaven when not quoted */}
+                      {!isQuoted && (order.customer_message || order.admin_notes) && (
+                        <div className="rounded-2xl bg-secondary/30 border border-border/60 p-4 sm:p-5 space-y-2">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span>Message from FrostHeaven</span>
+                          </div>
+                          <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                            {order.customer_message || order.admin_notes}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Write a Review Button for Completed Orders */}
+                      {statusLower === "completed" && (
+                        <div className="rounded-2xl bg-primary/5 border border-primary/20 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                              <Star className="h-4 w-4 fill-primary" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-semibold text-foreground">
+                                How was your celebration cake?
+                              </h4>
+                              <p className="text-[11px] text-muted-foreground">
+                                Share your experience with the FrostHeaven community.
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setReviewModalOrder(order);
+                              setIsReviewModalOpen(true);
+                            }}
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 shadow-xs cursor-pointer font-semibold shrink-0"
+                          >
+                            <Star className="h-3.5 w-3.5 fill-current" />
+                            <span>Write a Review</span>
+                          </Button>
                         </div>
                       )}
 
@@ -1085,43 +1180,86 @@ function AccountPage() {
               </div>
 
               {/* Prominent Quote / Instructions Banner with Action Buttons in Modal */}
-              {(selectedOrder.status.toLowerCase() === "quoted" || selectedOrder.admin_notes) && (
+              {selectedOrder.status.toLowerCase() === "quoted" && (
                 <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
                     <Sparkles className="h-4 w-4 text-amber-600" />
-                    <span>Bakery Team Notes & Quotation</span>
+                    <span>Quotation &amp; Bakery Instructions Ready</span>
                   </div>
                   <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                    {selectedOrder.admin_notes ||
+                    {selectedOrder.customer_message ||
+                      selectedOrder.admin_notes ||
                       "Your custom cake request has been reviewed by our bakery chef. Please review the instructions or confirm your order."}
                   </p>
 
                   {/* Accept quote action in modal */}
-                  {selectedOrder.status.toLowerCase() === "quoted" && (
-                    <div className="pt-2 flex flex-wrap items-center gap-2.5">
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          setActionConfirmation({ type: "accept", order: selectedOrder })
-                        }
-                        className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer font-semibold shadow-xs"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Accept Quote & Confirm Order</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setActionConfirmation({ type: "cancel", order: selectedOrder })
-                        }
-                        className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
-                      >
-                        <XCircle className="h-3.5 w-3.5 mr-1" />
-                        <span>Cancel Request</span>
-                      </Button>
+                  <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        setActionConfirmation({ type: "accept", order: selectedOrder })
+                      }
+                      className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer font-semibold shadow-xs"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>Accept Quote &amp; Confirm Order</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setActionConfirmation({ type: "cancel", order: selectedOrder })
+                      }
+                      className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1" />
+                      <span>Cancel Request</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Message from FrostHeaven when not quoted */}
+              {selectedOrder.status.toLowerCase() !== "quoted" &&
+                (selectedOrder.customer_message || selectedOrder.admin_notes) && (
+                  <div className="rounded-2xl bg-secondary/30 border border-border/60 p-4 sm:p-5 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Message from FrostHeaven</span>
                     </div>
-                  )}
+                    <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                      {selectedOrder.customer_message || selectedOrder.admin_notes}
+                    </p>
+                  </div>
+                )}
+
+              {/* Write a Review in Modal for Completed Orders */}
+              {selectedOrder.status.toLowerCase() === "completed" && (
+                <div className="rounded-2xl bg-primary/5 border border-primary/20 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Star className="h-4 w-4 fill-primary" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-foreground">
+                        How was your celebration cake?
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Share your feedback with the FrostHeaven community.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setReviewModalOrder(selectedOrder);
+                      setIsReviewModalOpen(true);
+                    }}
+                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 shadow-xs cursor-pointer font-semibold shrink-0"
+                  >
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                    <span>Write a Review</span>
+                  </Button>
                 </div>
               )}
 
@@ -1335,7 +1473,15 @@ function AccountPage() {
       {/* Review Submission Modal */}
       <ReviewSubmissionModal
         isOpen={isReviewModalOpen}
-        onClose={() => setIsReviewModalOpen(false)}
+        onClose={() => {
+          setIsReviewModalOpen(false);
+          setReviewModalOrder(null);
+        }}
+        onSuccess={() => {
+          fetchOrders();
+        }}
+        defaultOccasion={reviewModalOrder?.event_type}
+        defaultCustomerName={reviewModalOrder?.customer_name || profile?.full_name || undefined}
       />
     </div>
   );

@@ -30,9 +30,11 @@ export interface KitchenOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  internal_notes?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 interface KitchenProductionViewProps {
@@ -212,13 +214,13 @@ export function KitchenProductionView({
           <p className="line-clamp-3">{order.cake_details}</p>
         </div>
 
-        {/* Bakery Notes (if any) */}
-        {order.admin_notes && (
+        {/* Kitchen / Bakery Notes (if any) */}
+        {(order.internal_notes || order.admin_notes) && (
           <div className="rounded-2xl bg-amber-500/10 p-3 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-300">
             <span className="font-semibold flex items-center gap-1">
-              <ShieldCheck className="h-3 w-3" /> Note:
+              <ShieldCheck className="h-3 w-3" /> Kitchen Note:
             </span>
-            <p className="line-clamp-2 mt-0.5">{order.admin_notes}</p>
+            <p className="line-clamp-2 mt-0.5">{order.internal_notes || order.admin_notes}</p>
           </div>
         )}
 

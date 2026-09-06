@@ -46,21 +46,86 @@ interface CustomOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  internal_notes?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 const ALL_STATUSES = [
-  { key: "submitted", label: "Submitted", color: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  { key: "under_review", label: "Under Review", color: "bg-indigo-500", text: "text-indigo-700", bg: "bg-indigo-500/10", border: "border-indigo-500/20" },
-  { key: "quoted", label: "Quoted", color: "bg-sky-500", text: "text-sky-700", bg: "bg-sky-500/10", border: "border-sky-500/20" },
-  { key: "accepted", label: "Accepted", color: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-  { key: "in_baking", label: "In Baking", color: "bg-purple-500", text: "text-purple-700", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-  { key: "ready", label: "Ready", color: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-500/10", border: "border-teal-500/20" },
-  { key: "completed", label: "Completed", color: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  { key: "declined", label: "Declined", color: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  { key: "cancelled", label: "Cancelled", color: "bg-zinc-500", text: "text-zinc-700", bg: "bg-zinc-500/10", border: "border-zinc-500/20" },
+  {
+    key: "submitted",
+    label: "Submitted",
+    color: "bg-amber-500",
+    text: "text-amber-700",
+    bg: "bg-amber-500/10",
+    border: "border-amber-500/20",
+  },
+  {
+    key: "under_review",
+    label: "Under Review",
+    color: "bg-indigo-500",
+    text: "text-indigo-700",
+    bg: "bg-indigo-500/10",
+    border: "border-indigo-500/20",
+  },
+  {
+    key: "quoted",
+    label: "Quoted",
+    color: "bg-sky-500",
+    text: "text-sky-700",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/20",
+  },
+  {
+    key: "accepted",
+    label: "Accepted",
+    color: "bg-blue-500",
+    text: "text-blue-700",
+    bg: "bg-blue-500/10",
+    border: "border-blue-500/20",
+  },
+  {
+    key: "in_baking",
+    label: "In Baking",
+    color: "bg-purple-500",
+    text: "text-purple-700",
+    bg: "bg-purple-500/10",
+    border: "border-purple-500/20",
+  },
+  {
+    key: "ready",
+    label: "Ready",
+    color: "bg-teal-500",
+    text: "text-teal-700",
+    bg: "bg-teal-500/10",
+    border: "border-teal-500/20",
+  },
+  {
+    key: "completed",
+    label: "Completed",
+    color: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-500/10",
+    border: "border-emerald-500/20",
+  },
+  {
+    key: "declined",
+    label: "Declined",
+    color: "bg-rose-500",
+    text: "text-rose-700",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/20",
+  },
+  {
+    key: "cancelled",
+    label: "Cancelled",
+    color: "bg-zinc-500",
+    text: "text-zinc-700",
+    bg: "bg-zinc-500/10",
+    border: "border-zinc-500/20",
+  },
 ] as const;
 
 function AdminDashboardIndex() {
@@ -95,7 +160,7 @@ function AdminDashboardIndex() {
       const { data, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at"
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
         )
         .order("created_at", { ascending: false });
 
@@ -126,7 +191,7 @@ function AdminDashboardIndex() {
   const metrics = useMemo(() => {
     const total = orders.length;
     const awaitingReview = orders.filter(
-      (o) => o.status === "submitted" || o.status === "under_review"
+      (o) => o.status === "submitted" || o.status === "under_review",
     ).length;
     const inBaking = orders.filter((o) => o.status === "in_baking").length;
     const ready = orders.filter((o) => o.status === "ready").length;
@@ -362,7 +427,12 @@ function AdminDashboardIndex() {
         <div className="flex flex-wrap items-center gap-3">
           {lastUpdated && (
             <span className="text-[11px] text-muted-foreground">
-              Last updated: {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              Last updated:{" "}
+              {lastUpdated.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
             </span>
           )}
           <Button
@@ -371,7 +441,9 @@ function AdminDashboardIndex() {
             disabled={isRefreshing}
             className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+            />
             <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </Button>
         </div>
@@ -408,7 +480,11 @@ function AdminDashboardIndex() {
           </div>
           <div className="mt-3">
             <p className="text-2xl font-bold text-foreground">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.total}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.total
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">All-time custom requests</p>
           </div>
@@ -424,7 +500,11 @@ function AdminDashboardIndex() {
           </div>
           <div className="mt-3">
             <p className="text-2xl font-bold text-amber-700">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.awaitingReview}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.awaitingReview
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Submitted / Under Review</p>
           </div>
@@ -440,7 +520,11 @@ function AdminDashboardIndex() {
           </div>
           <div className="mt-3">
             <p className="text-2xl font-bold text-purple-700">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.inBaking}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.inBaking
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Kitchen production</p>
           </div>
@@ -456,7 +540,11 @@ function AdminDashboardIndex() {
           </div>
           <div className="mt-3">
             <p className="text-2xl font-bold text-teal-700">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.ready}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.ready
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Pickup / Delivery ready</p>
           </div>
@@ -472,7 +560,11 @@ function AdminDashboardIndex() {
           </div>
           <div className="mt-3">
             <p className="text-2xl font-bold text-emerald-700">
-              {loadingData ? <span className="text-muted-foreground animate-pulse">...</span> : metrics.completed}
+              {loadingData ? (
+                <span className="text-muted-foreground animate-pulse">...</span>
+              ) : (
+                metrics.completed
+              )}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Fulfilled orders</p>
           </div>
@@ -551,7 +643,9 @@ function AdminDashboardIndex() {
               </div>
               <div>
                 <h2 className="text-base font-medium text-foreground">Orders Needing Attention</h2>
-                <p className="text-[11px] text-muted-foreground">Actionable requests requiring admin follow-up</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Actionable requests requiring admin follow-up
+                </p>
               </div>
             </div>
             <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-foreground">
@@ -580,7 +674,9 @@ function AdminDashboardIndex() {
                 >
                   <div className="space-y-1 max-w-[70%]">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-foreground">{order.customer_name}</span>
+                      <span className="font-medium text-sm text-foreground">
+                        {order.customer_name}
+                      </span>
                       <span className="font-mono text-[10px] text-muted-foreground">
                         #{order.id.slice(0, 8)}
                       </span>
@@ -590,7 +686,9 @@ function AdminDashboardIndex() {
                       <span>•</span>
                       <span>{formatDate(order.event_date)}</span>
                     </div>
-                    <p className={`text-[11px] font-medium ${urgency === "high" ? "text-amber-700" : "text-primary"}`}>
+                    <p
+                      className={`text-[11px] font-medium ${urgency === "high" ? "text-amber-700" : "text-primary"}`}
+                    >
                       {reason}
                     </p>
                   </div>
@@ -620,7 +718,9 @@ function AdminDashboardIndex() {
               </div>
               <div>
                 <h2 className="text-base font-medium text-foreground">Upcoming Cake Events</h2>
-                <p className="text-[11px] text-muted-foreground">Scheduled delivery and celebration dates</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Scheduled delivery and celebration dates
+                </p>
               </div>
             </div>
             <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-foreground">
@@ -651,7 +751,9 @@ function AdminDashboardIndex() {
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-foreground">{order.customer_name}</span>
+                        <span className="font-medium text-sm text-foreground">
+                          {order.customer_name}
+                        </span>
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                             relative.isUrgent
@@ -744,8 +846,12 @@ function AdminDashboardIndex() {
                         </span>
                       </td>
                       <td className="py-3 px-4 font-medium text-foreground">{order.event_type}</td>
-                      <td className="py-3 px-4 text-muted-foreground">{formatDate(order.event_date)}</td>
-                      <td className="py-3 px-4 text-muted-foreground">{formatDate(order.created_at)}</td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {formatDate(order.event_date)}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {formatDate(order.created_at)}
+                      </td>
                       <td className="py-3 px-4">{renderStatusBadge(order.status)}</td>
                       <td className="py-3 px-4 text-right">
                         <Link

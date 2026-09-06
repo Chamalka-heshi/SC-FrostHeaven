@@ -63,7 +63,7 @@ export function DailyProductionSummaryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto print:p-0 print:bg-white print:static">
       <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl bg-card shadow-2xl border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200 print:shadow-none print:border-none print:max-h-none print:w-full print:rounded-none">
         {/* Header - Screen only controls */}
-        <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/30 print:hidden">
+        <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/40 sticky top-0 z-20 backdrop-blur-xs print:hidden">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <ChefHat className="h-5 w-5" />
@@ -197,9 +197,10 @@ export function DailyProductionSummaryModal({
                         </td>
                         <td className="py-3 px-3 align-top">
                           <p className="text-foreground leading-relaxed">{order.cake_details}</p>
-                          {order.admin_notes && (
-                            <div className="mt-1 text-[11px] text-amber-800 dark:text-amber-300 font-medium">
-                              Note: {order.admin_notes}
+                          {(order.internal_notes || order.admin_notes) && (
+                            <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 p-2 text-[11px] text-amber-900 dark:text-amber-200 font-medium">
+                              <span className="font-bold">Kitchen Note:</span>{" "}
+                              {order.internal_notes || order.admin_notes}
                             </div>
                           )}
                         </td>

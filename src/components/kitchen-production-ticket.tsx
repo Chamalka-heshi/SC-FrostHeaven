@@ -1,6 +1,17 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Printer, Calendar, Clock, Phone, Mail, User, FileText, ImageIcon, ShieldCheck, X } from "lucide-react";
+import {
+  Printer,
+  Calendar,
+  Clock,
+  Phone,
+  Mail,
+  User,
+  FileText,
+  ImageIcon,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 
 export interface TicketOrder {
   id: string;
@@ -12,9 +23,11 @@ export interface TicketOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  internal_notes?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 export interface TicketImage {
@@ -112,7 +125,8 @@ export function KitchenProductionTicket({
                 #{shortId}
               </div>
               <p className="text-[11px] text-muted-foreground print:text-black">
-                Printed: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                Printed: {new Date().toLocaleDateString()}{" "}
+                {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </p>
             </div>
           </div>
@@ -156,15 +170,21 @@ export function KitchenProductionTicket({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div>
                 <span className="text-muted-foreground print:text-black">Name:</span>
-                <p className="font-semibold text-foreground print:text-black">{order.customer_name}</p>
+                <p className="font-semibold text-foreground print:text-black">
+                  {order.customer_name}
+                </p>
               </div>
               <div>
                 <span className="text-muted-foreground print:text-black">Phone:</span>
-                <p className="font-semibold text-foreground print:text-black">{order.customer_phone || "Not provided"}</p>
+                <p className="font-semibold text-foreground print:text-black">
+                  {order.customer_phone || "Not provided"}
+                </p>
               </div>
               <div>
                 <span className="text-muted-foreground print:text-black">Email:</span>
-                <p className="font-semibold text-foreground print:text-black truncate">{order.customer_email}</p>
+                <p className="font-semibold text-foreground print:text-black truncate">
+                  {order.customer_email}
+                </p>
               </div>
             </div>
           </div>
@@ -180,15 +200,15 @@ export function KitchenProductionTicket({
             </div>
           </div>
 
-          {/* Bakery / Admin Notes */}
-          {order.admin_notes && (
+          {/* Kitchen / Bakery Notes */}
+          {(order.internal_notes || order.admin_notes) && (
             <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 print:bg-neutral-50 print:border-black p-4 space-y-1.5">
               <h4 className="text-xs uppercase tracking-wider font-bold text-amber-900 dark:text-amber-300 print:text-black flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-amber-700 print:text-black" />
-                Kitchen Notes & Pricing Guidance
+                Kitchen Notes & Instructions
               </h4>
               <p className="text-xs text-foreground/90 print:text-black leading-relaxed whitespace-pre-wrap font-medium">
-                {order.admin_notes}
+                {order.internal_notes || order.admin_notes}
               </p>
             </div>
           )}
@@ -226,15 +246,21 @@ export function KitchenProductionTicket({
           {/* Kitchen Sign-off Footer */}
           <div className="pt-6 border-t-2 border-dashed border-black/50 grid grid-cols-3 gap-4 text-xs">
             <div>
-              <span className="text-muted-foreground print:text-black font-semibold">Baker Sign-off:</span>
+              <span className="text-muted-foreground print:text-black font-semibold">
+                Baker Sign-off:
+              </span>
               <div className="mt-4 border-b border-black w-32" />
             </div>
             <div>
-              <span className="text-muted-foreground print:text-black font-semibold">Decorator Sign-off:</span>
+              <span className="text-muted-foreground print:text-black font-semibold">
+                Decorator Sign-off:
+              </span>
               <div className="mt-4 border-b border-black w-32" />
             </div>
             <div>
-              <span className="text-muted-foreground print:text-black font-semibold">Ready for Dispatch:</span>
+              <span className="text-muted-foreground print:text-black font-semibold">
+                Ready for Dispatch:
+              </span>
               <div className="mt-4 border-b border-black w-32" />
             </div>
           </div>

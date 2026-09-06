@@ -60,9 +60,11 @@ interface CustomOrder {
   event_date: string;
   cake_details: string;
   status: string;
-  admin_notes: string | null;
+  customer_message?: string | null | undefined;
+  internal_notes?: string | null | undefined;
+  admin_notes?: string | null | undefined;
   created_at: string;
-  updated_at?: string;
+  updated_at?: string | undefined;
 }
 
 interface CustomerProfile {

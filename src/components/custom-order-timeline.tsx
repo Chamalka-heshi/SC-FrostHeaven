@@ -1,4 +1,13 @@
-import { CheckCircle2, Clock, Sparkles, ChefHat, PackageCheck, AlertCircle, XCircle, FileText } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  ChefHat,
+  PackageCheck,
+  AlertCircle,
+  XCircle,
+  FileText,
+} from "lucide-react";
 
 export interface CustomOrderTimelineProps {
   status: string;
@@ -61,8 +70,8 @@ const TIMELINE_STAGES: TimelineStage[] = [
 export const STATUS_LABELS: Record<string, string> = {
   submitted: "Request Submitted",
   under_review: "Bakery Review",
-  quoted: "Quote Ready",
-  accepted: "Order Confirmed",
+  quoted: "Quotation Ready",
+  accepted: "Quotation Accepted",
   in_baking: "In Baking & Decorating",
   ready: "Ready for Pickup / Delivery",
   completed: "Completed",
@@ -76,19 +85,13 @@ export const STATUS_EXPLANATIONS: Record<string, string> = {
   under_review:
     "Our bakery team is reviewing your design, requirements, and event date availability.",
   quoted:
-    "Your cake request has been reviewed and a quotation or instructions are available below.",
-  accepted:
-    "Your order has been confirmed and is scheduled for preparation.",
-  in_baking:
-    "Your cake is currently being prepared and decorated by our bakery team.",
-  ready:
-    "Your cake is ready for pickup or delivery.",
-  completed:
-    "Your custom cake order has been completed.",
-  declined:
-    "We are unable to fulfill this custom order request at this time.",
-  cancelled:
-    "This custom order request has been cancelled.",
+    "Your quotation is ready for review. Please inspect the quoted price and deposit details below.",
+  accepted: "Your quotation has been accepted and your cake order is confirmed for production.",
+  in_baking: "Your cake is currently being prepared and decorated by our artisan bakery team.",
+  ready: "Your cake is ready for pickup or delivery.",
+  completed: "Your custom cake order has been completed.",
+  declined: "We are unable to fulfill this custom order request at this time.",
+  cancelled: "This custom order request has been cancelled.",
 };
 
 function getStageIndex(status: string): number {
@@ -172,8 +175,8 @@ export function CustomOrderTimeline({
                     isCompleted
                       ? "bg-primary text-primary-foreground shadow-xs"
                       : isCurrent
-                      ? "bg-primary text-primary-foreground ring-4 ring-primary/20 shadow-sm animate-pulse"
-                      : "bg-secondary text-muted-foreground/60 border border-border/60"
+                        ? "bg-primary text-primary-foreground ring-4 ring-primary/20 shadow-sm animate-pulse"
+                        : "bg-secondary text-muted-foreground/60 border border-border/60"
                   }`}
                 >
                   {isCompleted ? (
@@ -190,8 +193,8 @@ export function CustomOrderTimeline({
                       isCurrent
                         ? "text-primary font-bold"
                         : isCompleted
-                        ? "text-foreground font-semibold"
-                        : "text-muted-foreground/70"
+                          ? "text-foreground font-semibold"
+                          : "text-muted-foreground/70"
                     }`}
                   >
                     <span className="hidden sm:inline">{stage.label}</span>

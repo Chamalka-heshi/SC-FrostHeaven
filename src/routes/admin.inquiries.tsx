@@ -27,6 +27,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { exportToCsv } from "@/lib/csv-export";
+import {
+  normalizePhoneForWhatsApp,
+  getWhatsAppUrl,
+  getEmailMailtoUrl,
+} from "@/lib/order-readiness";
 
 export const Route = createFileRoute("/admin/inquiries")({
   head: () => ({
@@ -178,6 +183,49 @@ function AdminInquiriesPage() {
     } catch (err: unknown) {
       console.error("Status update error:", err);
       toast.error(err instanceof Error ? err.message : "Failed to update inquiry status.");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  // 3b. Atomic "Mark Responded & Open Email" Action Handler
+  const handleMarkRespondedAndOpenEmail = async (inquiry: ContactInquiry) => {
+    setIsUpdatingStatus(true);
+    try {
+      if (inquiry.status !== "responded") {
+        const { error } = await supabase
+          .from("contact_inquiries")
+          .update({ status: "responded" })
+          .eq("id", inquiry.id);
+
+        if (error) throw error;
+
+        // Update local list and modal state
+        setInquiries((prev) =>
+          prev.map((inq) => (inq.id === inquiry.id ? { ...inq, status: "responded" } : inq)),
+        );
+
+        if (selectedInquiry && selectedInquiry.id === inquiry.id) {
+          setSelectedInquiry((prev) => (prev ? { ...prev, status: "responded" } : null));
+        }
+
+        toast.success("Inquiry marked as responded.");
+      }
+
+      // Safe mailto URL construction
+      const mailtoUrl = getEmailMailtoUrl(
+        inquiry.email,
+        `Re: SC FrostHeaven Inquiry from ${inquiry.name}`,
+        `Hi ${inquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${inquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+      );
+      window.location.href = mailtoUrl;
+    } catch (err: unknown) {
+      console.error("Failed to update inquiry status before opening email:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to mark inquiry as responded. Email client was not opened.",
+      );
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -888,7 +936,10 @@ function AdminInquiriesPage() {
                   <span className="text-muted-foreground">Email Address:</span>
                   <p className="font-semibold text-foreground text-sm mt-0.5">
                     <a
-                      href={`mailto:${selectedInquiry.email}`}
+                      href={getEmailMailtoUrl(
+                        selectedInquiry.email,
+                        `Re: SC FrostHeaven Inquiry from ${selectedInquiry.name}`,
+                      )}
                       className="text-primary hover:underline"
                     >
                       {selectedInquiry.email}
@@ -897,15 +948,31 @@ function AdminInquiriesPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Phone Number:</span>
-                  <p className="font-medium text-foreground mt-0.5">
-                    {selectedInquiry.phone ? (
-                      <a href={`tel:${selectedInquiry.phone}`} className="hover:text-primary">
-                        {selectedInquiry.phone}
-                      </a>
-                    ) : (
-                      "Not provided"
-                    )}
-                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="font-medium text-foreground">
+                      {selectedInquiry.phone || "Not provided"}
+                    </p>
+                    {(() => {
+                      const waUrl = getWhatsAppUrl(
+                        selectedInquiry.phone,
+                        `Hello ${selectedInquiry.name}, this is SC FrostHeaven following up on your message.`,
+                      );
+                      if (waUrl) {
+                        return (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 px-2 py-0.5 text-[10px] font-semibold border border-emerald-500/30 transition-colors"
+                          >
+                            <Phone className="h-3 w-3 text-emerald-600" />
+                            <span>WhatsApp</span>
+                          </a>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Submitted Timestamp:</span>
@@ -950,34 +1017,50 @@ function AdminInquiriesPage() {
               </div>
 
               {/* REPLY ACTION */}
-              <div className="rounded-2xl bg-blush/30 p-4 border border-blush/60 space-y-2">
+              <div className="rounded-2xl bg-blush/30 p-4 border border-blush/60 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <span className="text-xs font-semibold text-blush-foreground flex items-center gap-1.5">
                     <Mail className="h-4 w-4 text-primary" />
                     Customer Direct Email Response
                   </span>
-                  <a
-                    href={`mailto:${selectedInquiry.email}?subject=${encodeURIComponent(
-                      "Re: SC FrostHeaven Inquiry",
-                    )}&body=${encodeURIComponent(
-                      `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
-                    )}`}
-                    onClick={() => {
-                      if (selectedInquiry.status !== "responded") {
-                        handleUpdateStatus(selectedInquiry.id, "responded");
-                      }
-                      toast.info(`Opening email client to reply to ${selectedInquiry.email}`);
-                    }}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    <span>Mark Responded & Open Email</span>
-                  </a>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={getEmailMailtoUrl(
+                        selectedInquiry.email,
+                        `Re: SC FrostHeaven Inquiry from ${selectedInquiry.name}`,
+                        `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+                      )}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-secondary hover:bg-secondary/80 text-foreground border border-border/70 px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer shadow-xs"
+                    >
+                      <Mail className="h-3.5 w-3.5 text-primary" />
+                      <span>Open Email Client</span>
+                    </a>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isUpdatingStatus}
+                      onClick={() => handleMarkRespondedAndOpenEmail(selectedInquiry)}
+                      className="rounded-full bg-primary text-primary-foreground text-xs font-semibold shadow-xs hover:bg-primary/90 cursor-pointer h-8 px-4 gap-1.5"
+                    >
+                      {isUpdatingStatus ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                          <span>Updating Status...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Mark Responded & Open Email</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Clicking &quot;Mark Responded & Open Email&quot; updates the status to Responded
-                  and launches your device&apos;s email client prefilled with the customer&apos;s
-                  email and message details.
+                  Clicking &quot;Mark Responded & Open Email&quot; first atomically updates the
+                  status to Responded in the database, then launches your device&apos;s email client
+                  prefilled with the customer&apos;s message context.
                 </p>
               </div>
             </div>

@@ -21,6 +21,11 @@ import {
   Loader2,
   CalendarDays,
   HeartHandshake,
+  Banknote,
+  Receipt,
+  DollarSign,
+  BadgePercent,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -39,6 +44,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { exportToCsv } from "@/lib/csv-export";
+import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
 
 export const Route = createFileRoute("/admin/analytics")({
   head: () => ({
@@ -63,6 +69,16 @@ interface CustomOrder {
   customer_message?: string | null | undefined;
   internal_notes?: string | null | undefined;
   admin_notes?: string | null | undefined;
+  quoted_price_lkr?: number | null | undefined;
+  deposit_amount_lkr?: number | null | undefined;
+  amount_paid_lkr?: number | undefined;
+  payment_status?: string | null | undefined;
+  payment_method?: string | null | undefined;
+  payment_reference?: string | null | undefined;
+  payment_notes?: string | null | undefined;
+  quote_issued_at?: string | null | undefined;
+  deposit_paid_at?: string | null | undefined;
+  fully_paid_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -155,14 +171,16 @@ function AdminAnalyticsPage() {
     setErrorMessage(null);
 
     try {
-      const [ordersRes, profilesRes, reviewsRes, inquiriesRes, notificationsRes] =
+      let ordersPromise = supabase
+        .from("custom_orders")
+        .select(
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
+        )
+        .order("created_at", { ascending: true });
+
+      const [initialOrdersRes, profilesRes, reviewsRes, inquiriesRes, notificationsRes] =
         await Promise.all([
-          supabase
-            .from("custom_orders")
-            .select(
-              "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
-            )
-            .order("created_at", { ascending: true }),
+          ordersPromise,
           supabase
             .from("profiles")
             .select("id, full_name, email, phone, city, role, created_at")
@@ -176,12 +194,31 @@ function AdminAnalyticsPage() {
           supabase.from("notifications").select("id, user_id, type, title, is_read, created_at"),
         ]);
 
-      if (ordersRes.error) throw ordersRes.error;
+      let ordersData = initialOrdersRes.data as CustomOrder[] | null;
+      if (
+        initialOrdersRes.error &&
+        (initialOrdersRes.error.code === "42703" ||
+          initialOrdersRes.error.message?.includes("quoted_price_lkr") ||
+          initialOrdersRes.error.message?.includes("does not exist"))
+      ) {
+        console.warn("Structured payment columns not detected. Falling back to base custom_orders columns.");
+        const fallbackRes = await supabase
+          .from("custom_orders")
+          .select(
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+          )
+          .order("created_at", { ascending: true });
+        if (fallbackRes.error) throw fallbackRes.error;
+        ordersData = fallbackRes.data as CustomOrder[] | null;
+      } else if (initialOrdersRes.error) {
+        throw initialOrdersRes.error;
+      }
+
       if (profilesRes.error) throw profilesRes.error;
       if (reviewsRes.error) throw reviewsRes.error;
       if (inquiriesRes.error) throw inquiriesRes.error;
 
-      setOrders((ordersRes.data as CustomOrder[]) || []);
+      setOrders(ordersData || []);
       setCustomers((profilesRes.data as CustomerProfile[]) || []);
       setReviews((reviewsRes.data as ReviewItem[]) || []);
       setInquiries((inquiriesRes.data as ContactInquiry[]) || []);
@@ -207,7 +244,7 @@ function AdminAnalyticsPage() {
     }
   }, [profile, fetchAnalyticsData]);
 
-  // 3. Multi-Domain KPI Calculations
+  // 3. Multi-Domain KPI Calculations (Operational & Financial)
   const kpis = useMemo(() => {
     const totalOrders = orders.length;
     const activeOrders = orders.filter((o) =>
@@ -215,6 +252,49 @@ function AdminAnalyticsPage() {
     ).length;
     const readyOrders = orders.filter((o) => o.status.toLowerCase() === "ready").length;
     const totalRegisteredCustomers = customers.length;
+
+    // Financial aggregation
+    let totalQuotedLkr = 0;
+    let totalCollectedLkr = 0;
+    let totalOutstandingLkr = 0;
+    let quotedCount = 0;
+    let acceptedCount = 0;
+    let depositPaidCount = 0;
+    let fullyPaidCount = 0;
+    let unpaidCount = 0;
+
+    orders.forEach((o) => {
+      const quoted = Number(o.quoted_price_lkr || 0);
+      const paid = Number(o.amount_paid_lkr || 0);
+      const statusLower = o.status.toLowerCase();
+      const payStatus = (o.payment_status || "unpaid").toLowerCase();
+
+      totalCollectedLkr += paid;
+      if (quoted > 0) {
+        totalQuotedLkr += quoted;
+        quotedCount++;
+      }
+
+      if (!TERMINAL_STATUSES.includes(statusLower)) {
+        if (quoted > paid) {
+          totalOutstandingLkr += (quoted - paid);
+        }
+      }
+
+      if (statusLower === "accepted") acceptedCount++;
+      if (payStatus === "fully_paid") fullyPaidCount++;
+      else if (payStatus === "deposit_paid") depositPaidCount++;
+      else unpaidCount++;
+    });
+
+    // Deposit clearance rate among orders requiring payment
+    const activePayableOrders = orders.filter((o) =>
+      ["accepted", "in_baking", "ready", "completed"].includes(o.status.toLowerCase()),
+    ).length;
+    const depositClearanceRate =
+      activePayableOrders > 0
+        ? Math.round(((depositPaidCount + fullyPaidCount) / activePayableOrders) * 100)
+        : 0;
 
     // Customer order frequency map
     const customerOrderCounts = new Map<string, number>();
@@ -258,6 +338,15 @@ function AdminAnalyticsPage() {
       unreadInquiries,
       totalInquiries: inquiries.length,
       totalNotifications: notifications.length,
+      totalQuotedLkr,
+      totalCollectedLkr,
+      totalOutstandingLkr,
+      quotedCount,
+      acceptedCount,
+      depositPaidCount,
+      fullyPaidCount,
+      unpaidCount,
+      depositClearanceRate,
     };
   }, [orders, customers, reviews, inquiries, notifications]);
 
@@ -400,11 +489,85 @@ function AdminAnalyticsPage() {
     return result;
   }, [orders]);
 
-  // 5. Export Master Analytics Summary CSV
+  // 4E. Payment Status Distribution (Donut / Bar)
+  const paymentStatusData = useMemo(() => {
+    const total = orders.length;
+    const counts = { fully_paid: 0, deposit_paid: 0, unpaid: 0 };
+
+    orders.forEach((o) => {
+      const ps = (o.payment_status || "unpaid").toLowerCase();
+      if (ps === "fully_paid") counts.fully_paid++;
+      else if (ps === "deposit_paid") counts.deposit_paid++;
+      else counts.unpaid++;
+    });
+
+    return [
+      {
+        name: "Fully Paid",
+        key: "fully_paid",
+        count: counts.fully_paid,
+        percentage: total > 0 ? ((counts.fully_paid / total) * 100).toFixed(1) : "0.0",
+        color: "#10b981",
+      },
+      {
+        name: "Deposit Paid",
+        key: "deposit_paid",
+        count: counts.deposit_paid,
+        percentage: total > 0 ? ((counts.deposit_paid / total) * 100).toFixed(1) : "0.0",
+        color: "#3b82f6",
+      },
+      {
+        name: "Unpaid / Pending",
+        key: "unpaid",
+        count: counts.unpaid,
+        percentage: total > 0 ? ((counts.unpaid / total) * 100).toFixed(1) : "0.0",
+        color: "#f59e0b",
+      },
+    ];
+  }, [orders]);
+
+  // 4F. Production Readiness Distribution Pipeline
+  const readinessPipelineData = useMemo(() => {
+    const map: Record<string, { label: string; count: number; color: string }> = {
+      awaiting_quote: { label: "Awaiting Quote", count: 0, color: "#f59e0b" },
+      quoted: { label: "Quoted (Awaiting Confirmation)", count: 0, color: "#0ea5e9" },
+      awaiting_deposit: { label: "Awaiting Deposit", count: 0, color: "#d97706" },
+      ready_for_production: { label: "Ready for Production", count: 0, color: "#10b981" },
+      in_baking: { label: "In Production / Baking", count: 0, color: "#a855f7" },
+      ready: { label: "Ready for Pickup", count: 0, color: "#14b8a6" },
+      completed: { label: "Completed", count: 0, color: "#059669" },
+    };
+
+    orders.forEach((o) => {
+      const r = getProductionReadiness(o);
+      const entry = map[r.key];
+      if (entry) {
+        entry.count++;
+      }
+    });
+
+    const total = orders.length;
+    return Object.entries(map).map(([key, item]) => ({
+      key,
+      name: item.label,
+      count: item.count,
+      percentage: total > 0 ? ((item.count / total) * 100).toFixed(1) : "0.0",
+      color: item.color,
+    }));
+  }, [orders]);
+
+  // 5. Export Master Analytics Summary CSV (Including Phase 6B/6E Financials)
   const handleExportAnalyticsSummary = () => {
     const todayStr = new Date().toISOString().split("T")[0] || "";
     const headers = ["Metric Category", "Metric Name", "Metric Value", "Calculation Details"];
     const rows: (string | number)[][] = [
+      ["Financials", "Total Funds Collected", formatLKR(kpis.totalCollectedLkr), "Verified customer payments recorded"],
+      ["Financials", "Total Quoted Pipeline", formatLKR(kpis.totalQuotedLkr), "Cumulative quoted order value"],
+      ["Financials", "Active Outstanding Balance", formatLKR(kpis.totalOutstandingLkr), "Uncollected balance across active orders"],
+      ["Financials", "Deposit Clearance Rate", `${kpis.depositClearanceRate}%`, "(Deposit/Fully Paid orders / Active payable orders) * 100"],
+      ["Financials", "Fully Paid Orders", kpis.fullyPaidCount, "Orders with full amount received"],
+      ["Financials", "Deposit Paid Orders", kpis.depositPaidCount, "Orders with deposit cleared"],
+      ["Financials", "Unpaid Orders", kpis.unpaidCount, "Orders without recorded payment"],
       ["Overview", "Total Custom Orders", kpis.totalOrders, "All recorded custom cake requests"],
       [
         "Overview",
@@ -540,18 +703,90 @@ function AdminAnalyticsPage() {
         </div>
       )}
 
-      {/* 2. Multi-Domain KPI Summary Cards (8 Cards) */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
+      {/* 2. Multi-Domain KPI Summary Cards */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <Layers className="h-4 w-4 text-primary" /> Key Performance Indicators
+            <Layers className="h-4 w-4 text-primary" /> Key Operational & Financial Indicators
           </h2>
           <span className="text-xs text-muted-foreground">
             Calculated across custom order pipeline & customer directory
           </span>
         </div>
 
+        {/* Financial Highlights (4 Cards) */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Funds Collected</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
+                <Banknote className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-emerald-700">
+                {formatLKR(kpis.totalCollectedLkr)}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Verified deposits & full payments
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Quoted Pipeline</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600">
+                <DollarSign className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-foreground">
+                {formatLKR(kpis.totalQuotedLkr)}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Total value of {kpis.quotedCount} quoted custom orders
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Active Outstanding Due</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
+                <Receipt className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-amber-700">
+                {formatLKR(kpis.totalOutstandingLkr)}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Uncollected balance across active orders
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Deposit Clearance</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
+                <BadgePercent className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-purple-700">
+                {kpis.depositClearanceRate}%
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {kpis.depositPaidCount + kpis.fullyPaidCount} orders cleared for kitchen
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Operational Indicators (8 Cards) */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-1">
           {/* Card 1: Total Custom Orders */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
@@ -1004,6 +1239,156 @@ function AdminAnalyticsPage() {
             </span>
             <span>
               Active Pipeline: {kpis.activeOrders} of {kpis.totalOrders}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Recharts Section 3: Payment Status & Production Readiness Funnel */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* 5A. Payment Status Breakdown */}
+        <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between border-b border-border/50 pb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Banknote className="h-4 w-4 text-emerald-600" /> Payment Clearance & Realization
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Breakdown of orders by structured payment status (Fully Paid, Deposit Paid, Unpaid)
+              </p>
+            </div>
+            <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+              {paymentStatusData.reduce((acc, p) => acc + p.count, 0)} Total
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 items-center gap-4 h-64">
+            <div className="h-full w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={paymentStatusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={4}
+                    dataKey="count"
+                  >
+                    {paymentStatusData.map((entry, index) => (
+                      <Cell key={`pay-cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(
+                      value: unknown,
+                      _name: unknown,
+                      item: { payload?: { name?: string; percentage?: string } },
+                    ) => [
+                      `${value} orders (${item.payload?.percentage ?? "0"}%)`,
+                      item.payload?.name ?? "Status",
+                    ]}
+                    contentStyle={{
+                      backgroundColor: "#ffffff",
+                      borderRadius: "1rem",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Payment Status Legend */}
+            <div className="space-y-3">
+              {paymentStatusData.map((item) => (
+                <div key={item.key} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium text-foreground">{item.name}</span>
+                    </div>
+                    <span className="font-semibold text-foreground font-mono">
+                      {item.count} ({item.percentage}%)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-secondary/80">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${item.percentage}%`,
+                        backgroundColor: item.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-border/50 pt-3 text-[11px] text-muted-foreground flex items-center justify-between">
+            <span>Collected Funds: {formatLKR(kpis.totalCollectedLkr)}</span>
+            <span>Outstanding: {formatLKR(kpis.totalOutstandingLkr)}</span>
+          </div>
+        </div>
+
+        {/* 5B. Production Readiness Pipeline */}
+        <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between border-b border-border/50 pb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-purple-600" /> Operational Production Readiness
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Financial clearance & baking readiness stages across active and completed orders
+              </p>
+            </div>
+            <span className="rounded-full bg-purple-500/10 border border-purple-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">
+              Kitchen Workflow
+            </span>
+          </div>
+
+          <div className="space-y-2.5 overflow-y-auto max-h-64 pr-2">
+            {readinessPipelineData.map((item) => (
+              <div key={item.key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="font-medium text-foreground">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground font-mono">{item.count} orders</span>
+                    <span className="text-muted-foreground text-[11px]">({item.percentage}%)</span>
+                  </div>
+                </div>
+
+                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary/80">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.max(Number(item.percentage), item.count > 0 ? 4 : 0)}%`,
+                      backgroundColor: item.color,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t border-border/50 pt-3 text-[11px] text-muted-foreground flex items-center justify-between">
+            <span>
+              Production Ready / Cleared:{" "}
+              {readinessPipelineData.find((r) => r.key === "ready_for_production")?.count || 0} Orders
+            </span>
+            <span>
+              Awaiting Deposit:{" "}
+              {readinessPipelineData.find((r) => r.key === "awaiting_deposit")?.count || 0} Orders
             </span>
           </div>
         </div>

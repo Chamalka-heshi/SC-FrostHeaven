@@ -34,12 +34,24 @@ import {
   Printer,
   SlidersHorizontal,
   Download,
+  Receipt,
+  Banknote,
+  CreditCard,
+  MessageSquare,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { KitchenProductionView } from "@/components/kitchen-production-view";
 import { KitchenProductionTicket } from "@/components/kitchen-production-ticket";
 import { exportToCsv } from "@/lib/csv-export";
+import {
+  getProductionReadiness,
+  getPaymentBadgeInfo,
+  normalizePhoneForWhatsApp,
+  getWhatsAppUrl,
+  getEmailMailtoUrl,
+  type ReadinessInfo,
+} from "@/lib/order-readiness";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () => ({
@@ -64,6 +76,16 @@ interface CustomOrder {
   customer_message?: string | null | undefined;
   internal_notes?: string | null | undefined;
   admin_notes?: string | null | undefined;
+  quoted_price_lkr?: number | null | undefined;
+  deposit_amount_lkr?: number | null | undefined;
+  amount_paid_lkr?: number | undefined;
+  payment_status?: string | null | undefined;
+  payment_method?: string | null | undefined;
+  payment_reference?: string | null | undefined;
+  payment_notes?: string | null | undefined;
+  quote_issued_at?: string | null | undefined;
+  deposit_paid_at?: string | null | undefined;
+  fully_paid_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -100,6 +122,21 @@ const WORKFLOW_STAGES = [
   { key: "completed", label: "Completed" },
 ] as const;
 
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: "Bank Transfer",
+  cash_on_pickup: "Cash at Bakery / Pickup",
+  card_pos: "Card / POS Terminal",
+  online_payment: "Online Payment",
+};
+
+export function formatLKR(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(amount)) return "—";
+  return `LKR ${new Intl.NumberFormat("en-LK", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)}`;
+}
+
 function AdminOrdersPage() {
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
@@ -133,6 +170,19 @@ function AdminOrdersPage() {
   const [customerAddress, setCustomerAddress] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
 
+  // Structured Financial Quotation & Payment state
+  const [quotedPriceInput, setQuotedPriceInput] = useState<string>("");
+  const [depositAmountInput, setDepositAmountInput] = useState<string>("");
+  const [amountPaidInput, setAmountPaidInput] = useState<string>("");
+  const [paymentMethodInput, setPaymentMethodInput] = useState<string>("bank_transfer");
+  const [paymentReferenceInput, setPaymentReferenceInput] = useState<string>("");
+  const [paymentNotesInput, setPaymentNotesInput] = useState<string>("");
+  const [isSavingQuote, setIsSavingQuote] = useState(false);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [financialSectionTab, setFinancialSectionTab] = useState<"overview" | "quote" | "payment">(
+    "overview",
+  );
+
   // Kitchen Quick Actions & Ticket Printing state
   const [ticketOrder, setTicketOrder] = useState<CustomOrder | null>(null);
   const [ticketImages, setTicketImages] = useState<OrderImage[]>([]);
@@ -150,21 +200,43 @@ function AdminOrdersPage() {
     }
   }, [authLoading, user, profile, navigate]);
 
-  // 2. Fetch All Custom Orders from Supabase
+  // 2. Fetch All Custom Orders from Supabase (Including Phase 6B Structured Financial Data)
   const fetchOrders = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     else setLoadingOrders(true);
     setOrdersError(null);
 
     try {
-      const { data, error } = await supabase
+      const { data: initialData, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, created_at, updated_at",
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, payment_reference, payment_notes, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
         )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      let data = initialData;
+
+      if (
+        error &&
+        (error.code === "42703" ||
+          error.message?.includes("quoted_price_lkr") ||
+          error.message?.includes("does not exist"))
+      ) {
+        console.warn(
+          "Structured payment columns not detected on custom_orders. Falling back to base columns.",
+        );
+        const fallbackRes = await supabase
+          .from("custom_orders")
+          .select(
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, created_at, updated_at",
+          )
+          .order("created_at", { ascending: false });
+        if (fallbackRes.error) throw fallbackRes.error;
+        data = (fallbackRes.data || []) as unknown as typeof data;
+      } else if (error) {
+        throw error;
+      }
+
       setOrders(data || []);
 
       if (isManualRefresh) {
@@ -260,6 +332,7 @@ function AdminOrdersPage() {
           const msgMatch = order.customer_message?.toLowerCase().includes(query);
           const internalMatch = order.internal_notes?.toLowerCase().includes(query);
           const legacyMatch = order.admin_notes?.toLowerCase().includes(query);
+          const refMatch = order.payment_reference?.toLowerCase().includes(query);
 
           if (
             !nameMatch &&
@@ -271,7 +344,8 @@ function AdminOrdersPage() {
             !detailsMatch &&
             !msgMatch &&
             !internalMatch &&
-            !legacyMatch
+            !legacyMatch &&
+            !refMatch
           ) {
             return false;
           }
@@ -304,6 +378,23 @@ function AdminOrdersPage() {
     setOrderImages([]);
     setCustomerAddress(null);
     setLoadingImages(true);
+
+    // Initialize Financial Quotation & Payment state
+    setQuotedPriceInput(
+      order.quoted_price_lkr !== null && order.quoted_price_lkr !== undefined
+        ? String(order.quoted_price_lkr)
+        : "",
+    );
+    setDepositAmountInput(
+      order.deposit_amount_lkr !== null && order.deposit_amount_lkr !== undefined
+        ? String(order.deposit_amount_lkr)
+        : "",
+    );
+    setAmountPaidInput(String(order.amount_paid_lkr ?? 0));
+    setPaymentMethodInput(order.payment_method || "bank_transfer");
+    setPaymentReferenceInput(order.payment_reference || "");
+    setPaymentNotesInput(order.payment_notes || "");
+    setFinancialSectionTab("overview");
 
     try {
       if (order.customer_id) {
@@ -466,7 +557,228 @@ function AdminOrdersPage() {
     }
   };
 
-  // 10. Open Kitchen Ticket for Printing
+  // 10. Save / Issue Quotation (Admin-Only Structured Whole LKR Integer)
+  const handleSaveQuote = async () => {
+    if (!selectedOrder || isSavingQuote) return;
+
+    const trimmedPrice = quotedPriceInput.trim();
+    if (!trimmedPrice) {
+      toast.error("Please enter a total quoted price in LKR.");
+      return;
+    }
+
+    const priceNum = parseInt(trimmedPrice, 10);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast.error("Quoted price must be a valid whole rupee amount greater than 0.");
+      return;
+    }
+
+    let depositNum = 0;
+    const trimmedDeposit = depositAmountInput.trim();
+    if (trimmedDeposit) {
+      depositNum = parseInt(trimmedDeposit, 10);
+      if (isNaN(depositNum) || depositNum < 0) {
+        toast.error("Deposit amount cannot be negative.");
+        return;
+      }
+      if (depositNum > priceNum) {
+        toast.error("Deposit amount cannot exceed the total quoted price.");
+        return;
+      }
+    }
+
+    setIsSavingQuote(true);
+
+    try {
+      const nowIso = new Date().toISOString();
+      const nextStatus =
+        selectedOrder.status === "submitted" || selectedOrder.status === "under_review"
+          ? "quoted"
+          : selectedOrder.status;
+
+      const currentPaid = selectedOrder.amount_paid_lkr ?? 0;
+      let nextPaymentStatus: string;
+      if (currentPaid === 0) {
+        nextPaymentStatus = "unpaid";
+      } else if (currentPaid >= priceNum && priceNum > 0) {
+        nextPaymentStatus = "fully_paid";
+      } else if (depositNum > 0 && currentPaid >= depositNum) {
+        nextPaymentStatus = "deposit_paid";
+      } else {
+        nextPaymentStatus = "unpaid";
+      }
+
+      let quoteIssuedAt = selectedOrder.quote_issued_at;
+      if (!selectedOrder.quote_issued_at || selectedOrder.status !== nextStatus) {
+        quoteIssuedAt = nowIso;
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        quoted_price_lkr: priceNum,
+        deposit_amount_lkr: depositNum,
+        payment_status: nextPaymentStatus,
+        customer_message: customerMessageText.trim() || null,
+        internal_notes: internalNotesText.trim() || null,
+        admin_notes: customerMessageText.trim() || null,
+        status: nextStatus,
+        quote_issued_at: quoteIssuedAt,
+        updated_at: nowIso,
+      };
+
+      const { error } = await supabase
+        .from("custom_orders")
+        .update(updatePayload)
+        .eq("id", selectedOrder.id);
+
+      if (error) throw error;
+
+      const updatedOrder: CustomOrder = {
+        ...selectedOrder,
+        quoted_price_lkr: priceNum,
+        deposit_amount_lkr: depositNum,
+        payment_status: nextPaymentStatus,
+        customer_message: customerMessageText.trim() || null,
+        internal_notes: internalNotesText.trim() || null,
+        admin_notes: customerMessageText.trim() || null,
+        status: nextStatus,
+        quote_issued_at: quoteIssuedAt || nowIso,
+        updated_at: nowIso,
+      };
+
+      setSelectedOrder(updatedOrder);
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
+      toast.success(
+        nextStatus === "quoted"
+          ? `Quotation of ${formatLKR(priceNum)} issued and order moved to Quoted.`
+          : `Quotation updated to ${formatLKR(priceNum)}.`,
+      );
+      setFinancialSectionTab("overview");
+    } catch (err: unknown) {
+      console.error("Error saving quotation:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to save quotation.");
+    } finally {
+      setIsSavingQuote(false);
+    }
+  };
+
+  // 11. Save / Record Verified Payment (Admin Audit Logging)
+  const handleSavePayment = async () => {
+    if (!selectedOrder || isSavingPayment) return;
+
+    if (!selectedOrder.quoted_price_lkr || selectedOrder.quoted_price_lkr <= 0) {
+      toast.error(
+        "A structured quotation must be created and saved before payments can be recorded.",
+      );
+      return;
+    }
+
+    const trimmedPaid = amountPaidInput.trim();
+    const paidNum = trimmedPaid === "" ? 0 : parseInt(trimmedPaid, 10);
+
+    if (isNaN(paidNum) || paidNum < 0) {
+      toast.error("Amount paid must be a non-negative whole rupee number.");
+      return;
+    }
+
+    if (paidNum > selectedOrder.quoted_price_lkr) {
+      toast.error(
+        `Amount paid (${formatLKR(paidNum)}) cannot exceed total quote (${formatLKR(selectedOrder.quoted_price_lkr)}).`,
+      );
+      return;
+    }
+
+    setIsSavingPayment(true);
+
+    try {
+      const nowIso = new Date().toISOString();
+      const depositTarget = selectedOrder.deposit_amount_lkr ?? 0;
+      const quotedTotal = selectedOrder.quoted_price_lkr;
+
+      // Determine database-valid payment status adhering strictly to Phase 6B check constraint
+      let newPaymentStatus: string;
+      if (paidNum === 0) {
+        newPaymentStatus = "unpaid";
+      } else if (paidNum >= quotedTotal && quotedTotal > 0) {
+        newPaymentStatus = "fully_paid";
+      } else if (depositTarget > 0 && paidNum >= depositTarget) {
+        newPaymentStatus = "deposit_paid";
+      } else {
+        newPaymentStatus = "unpaid";
+      }
+
+      let depositPaidAt: string | null = selectedOrder.deposit_paid_at ?? null;
+      let fullyPaidAt: string | null = selectedOrder.fully_paid_at ?? null;
+
+      const validPaymentMethods = ["bank_transfer", "cash_on_pickup", "card_pos", "online_payment"];
+      let safePaymentMethod: string | null =
+        paymentMethodInput && validPaymentMethods.includes(paymentMethodInput)
+          ? paymentMethodInput
+          : "bank_transfer";
+
+      if (paidNum === 0) {
+        newPaymentStatus = "unpaid";
+        depositPaidAt = null;
+        fullyPaidAt = null;
+        safePaymentMethod = null;
+      } else if (paidNum >= quotedTotal && quotedTotal > 0) {
+        newPaymentStatus = "fully_paid";
+        if (!depositPaidAt) depositPaidAt = nowIso;
+        if (!fullyPaidAt) fullyPaidAt = nowIso;
+      } else if (depositTarget > 0 && paidNum >= depositTarget) {
+        newPaymentStatus = "deposit_paid";
+        if (!depositPaidAt) depositPaidAt = nowIso;
+        fullyPaidAt = null;
+      } else {
+        newPaymentStatus = "unpaid";
+        depositPaidAt = null;
+        fullyPaidAt = null;
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        amount_paid_lkr: paidNum,
+        payment_status: newPaymentStatus,
+        payment_method: safePaymentMethod,
+        payment_reference: paidNum === 0 ? null : paymentReferenceInput.trim() || null,
+        payment_notes: paymentNotesInput.trim() || null,
+        deposit_paid_at: depositPaidAt,
+        fully_paid_at: fullyPaidAt,
+        updated_at: nowIso,
+      };
+
+      const { error } = await supabase
+        .from("custom_orders")
+        .update(updatePayload)
+        .eq("id", selectedOrder.id);
+
+      if (error) throw error;
+
+      const updatedOrder: CustomOrder = {
+        ...selectedOrder,
+        amount_paid_lkr: paidNum,
+        payment_status: newPaymentStatus,
+        payment_method: safePaymentMethod,
+        payment_reference: paymentReferenceInput.trim() || null,
+        payment_notes: paymentNotesInput.trim() || null,
+        deposit_paid_at: depositPaidAt,
+        fully_paid_at: fullyPaidAt,
+        updated_at: nowIso,
+      };
+
+      setSelectedOrder(updatedOrder);
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
+      toast.success(
+        `Payment record updated: ${formatLKR(paidNum)} verified (${newPaymentStatus.replace(/_/g, " ")}).`,
+      );
+      setFinancialSectionTab("overview");
+    } catch (err: unknown) {
+      console.error("Error saving payment record:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to record payment.");
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  // 12. Open Kitchen Ticket for Printing
   const handleOpenTicket = async (order: CustomOrder) => {
     setTicketOrder(order);
     setTicketImages([]);
@@ -501,7 +813,7 @@ function AdminOrdersPage() {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  // 12. Export Custom Orders to CSV
+  // 13. Export Custom Orders to CSV (Structured Financial Columns Included)
   const handleExportOrdersCsv = () => {
     const todayStr = new Date().toISOString().split("T")[0] || "";
     const headers = [
@@ -511,31 +823,75 @@ function AdminOrdersPage() {
       "Customer Phone",
       "Event Type",
       "Event Date",
-      "Status",
+      "Workflow Status",
+      "Production Readiness",
+      "Quoted Price (LKR)",
+      "Deposit Amount (LKR)",
+      "Amount Paid (LKR)",
+      "Outstanding Balance (LKR)",
+      "Payment Status",
+      "Payment Method",
+      "Quote Issued At",
+      "Deposit Paid At",
+      "Fully Paid At",
       "Submission Date",
       "Updated Date",
       "Cake Details",
       "Customer Message",
-      "Internal Notes",
     ];
 
-    const rows = filteredOrders.map((o) => [
-      o.id,
-      o.customer_name,
-      o.customer_email,
-      o.customer_phone || "",
-      o.event_type,
-      o.event_date,
-      o.status,
-      o.created_at,
-      o.updated_at || o.created_at,
-      o.cake_details,
-      o.customer_message || o.admin_notes || "",
-      o.internal_notes || "",
-    ]);
+    const rows = filteredOrders.map((o) => {
+      const isQuoted = o.quoted_price_lkr !== null && o.quoted_price_lkr !== undefined;
+      const quoted = isQuoted ? o.quoted_price_lkr : "";
+      const deposit = isQuoted ? (o.deposit_amount_lkr ?? "") : "";
+      const paid = isQuoted ? (o.amount_paid_lkr ?? 0) : "";
+      const balance = isQuoted
+        ? Math.max((o.quoted_price_lkr ?? 0) - (o.amount_paid_lkr ?? 0), 0)
+        : "";
+      const readiness = getProductionReadiness(o);
+      const paymentInfo = getPaymentBadgeInfo(o);
+
+      return [
+        o.id,
+        o.customer_name,
+        o.customer_email,
+        o.customer_phone || "",
+        o.event_type,
+        o.event_date,
+        o.status,
+        readiness.label,
+        quoted,
+        deposit,
+        paid,
+        balance,
+        paymentInfo.label,
+        o.payment_method ? PAYMENT_METHOD_LABELS[o.payment_method] || o.payment_method : "",
+        o.quote_issued_at || "",
+        o.deposit_paid_at || "",
+        o.fully_paid_at || "",
+        o.created_at,
+        o.updated_at || o.created_at,
+        o.cake_details,
+        o.customer_message || o.admin_notes || "",
+      ];
+    });
 
     exportToCsv(`custom-orders-${todayStr}.csv`, headers, rows);
     toast.success(`Exported ${filteredOrders.length} custom orders to CSV`);
+  };
+
+  // Helper: Production readiness badge renderer
+  const renderReadinessBadge = (order: CustomOrder) => {
+    const readiness = getProductionReadiness(order);
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border ${readiness.badgeClass}`}
+        title={readiness.description}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${readiness.dotClass}`} />
+        {readiness.label}
+      </span>
+    );
   };
 
   // Helper: Status badge renderer
@@ -611,6 +967,60 @@ function AdminOrdersPage() {
           </span>
         );
     }
+  };
+
+  // Helper: Payment status badge renderer with Section 4/5 Logic
+  const renderPaymentStatusBadge = (order: CustomOrder) => {
+    if (order.quoted_price_lkr === null || order.quoted_price_lkr === undefined) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border/50">
+          Not Quoted
+        </span>
+      );
+    }
+
+    const price = order.quoted_price_lkr;
+    const deposit = order.deposit_amount_lkr ?? 0;
+    const paid = order.amount_paid_lkr ?? 0;
+
+    if (paid >= price && price > 0) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-500/20">
+          <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+          Fully Paid
+        </span>
+      );
+    }
+
+    if (deposit > 0 && paid >= deposit) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-teal-700 border border-teal-500/20">
+          <Sparkles className="h-3 w-3 text-teal-600" />
+          Deposit Paid
+        </span>
+      );
+    }
+
+    if (deposit > 0 && paid > 0 && paid < deposit) {
+      return (
+        <span className="inline-flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-500/20">
+            <Clock className="h-3 w-3 text-amber-600" />
+            Unpaid
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-800 border border-amber-500/30">
+            Partial Payment Received
+          </span>
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-500/20">
+        <Clock className="h-3 w-3 text-amber-600" />
+        Unpaid
+      </span>
+    );
   };
 
   const formatDate = (dateStr: string) => {
@@ -944,59 +1354,106 @@ function AdminOrdersPage() {
                     <tr>
                       <th className="py-4 px-6">Order ID</th>
                       <th className="py-4 px-6">Customer</th>
-                      <th className="py-4 px-6">Event Type</th>
-                      <th className="py-4 px-6">Event Date</th>
-                      <th className="py-4 px-6">Status</th>
+                      <th className="py-4 px-6">Event & Date</th>
+                      <th className="py-4 px-6">Status & Readiness</th>
+                      <th className="py-4 px-6">Financials</th>
                       <th className="py-4 px-6">Created</th>
                       <th className="py-4 px-6 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/40">
-                    {filteredOrders.map((order) => (
-                      <tr
-                        key={order.id}
-                        onClick={() => handleOpenOrderDetails(order)}
-                        className="group hover:bg-secondary/30 transition-colors cursor-pointer"
-                      >
-                        <td className="py-4 px-6 font-mono font-medium text-foreground">
-                          <span className="rounded-lg bg-secondary px-2 py-1">
-                            #{order.id.slice(0, 8)}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6">
-                          <p className="font-semibold text-foreground">{order.customer_name}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {order.customer_email}
-                          </p>
-                        </td>
-                        <td className="py-4 px-6 font-medium text-foreground">
-                          {order.event_type}
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className="flex items-center gap-1 font-medium text-foreground">
-                            <Calendar className="h-3.5 w-3.5 text-primary" />
-                            {formatDate(order.event_date)}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6">{renderStatusBadge(order.status)}</td>
-                        <td className="py-4 px-6 text-muted-foreground">
-                          {formatDate(order.created_at)}
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenOrderDetails(order);
-                            }}
-                            className="rounded-full text-xs group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                          >
-                            Manage
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredOrders.map((order) => {
+                      const isQuoted =
+                        order.quoted_price_lkr !== null && order.quoted_price_lkr !== undefined;
+                      const balance = isQuoted
+                        ? Math.max((order.quoted_price_lkr ?? 0) - (order.amount_paid_lkr ?? 0), 0)
+                        : null;
+
+                      return (
+                        <tr
+                          key={order.id}
+                          onClick={() => handleOpenOrderDetails(order)}
+                          className="group hover:bg-secondary/30 transition-colors cursor-pointer"
+                        >
+                          <td className="py-4 px-6 font-mono font-medium text-foreground">
+                            <span className="rounded-lg bg-secondary px-2 py-1">
+                              #{order.id.slice(0, 8)}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <p className="font-semibold text-foreground">{order.customer_name}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {order.customer_email}
+                            </p>
+                          </td>
+                          <td className="py-4 px-6">
+                            <p className="font-medium text-foreground">{order.event_type}</p>
+                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground mt-0.5">
+                              <Calendar className="h-3 w-3 text-primary" />
+                              {formatDate(order.event_date)}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <div className="flex flex-col gap-1.5 items-start">
+                              {renderStatusBadge(order.status)}
+                              {renderReadinessBadge(order)}
+                            </div>
+                          </td>
+                          <td className="py-4 px-6">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-foreground">
+                                  {isQuoted ? formatLKR(order.quoted_price_lkr) : "Not Quoted"}
+                                </span>
+                                {renderPaymentStatusBadge(order)}
+                              </div>
+                              {isQuoted &&
+                                (order.deposit_amount_lkr ?? 0) > 0 &&
+                                (order.amount_paid_lkr ?? 0) > 0 &&
+                                (order.amount_paid_lkr ?? 0) < (order.deposit_amount_lkr ?? 0) && (
+                                  <p className="text-[11px] text-amber-800 font-medium">
+                                    {formatLKR(order.amount_paid_lkr)} received (
+                                    {formatLKR(
+                                      (order.deposit_amount_lkr ?? 0) -
+                                        (order.amount_paid_lkr ?? 0),
+                                    )}{" "}
+                                    to reach deposit)
+                                  </p>
+                                )}
+                              {isQuoted && balance !== null && balance > 0 && (
+                                <p className="text-[11px] text-muted-foreground font-medium">
+                                  Due:{" "}
+                                  <span className="font-semibold text-foreground">
+                                    {formatLKR(balance)}
+                                  </span>
+                                </p>
+                              )}
+                              {isQuoted && balance === 0 && (
+                                <p className="text-[11px] text-emerald-600 font-medium">
+                                  Paid in Full
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-4 px-6 text-muted-foreground">
+                            {formatDate(order.created_at)}
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenOrderDetails(order);
+                              }}
+                              className="rounded-full text-xs group-hover:bg-primary group-hover:text-primary-foreground transition-colors cursor-pointer"
+                            >
+                              Manage
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1011,7 +1468,7 @@ function AdminOrdersPage() {
           <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-soft border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border/60 px-6 py-5 bg-card sticky top-0 z-10">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <span className="font-mono text-xs font-semibold text-muted-foreground bg-secondary px-2.5 py-1 rounded-xl">
                   #{selectedOrder.id.slice(0, 8)}
                 </span>
@@ -1028,6 +1485,8 @@ function AdminOrdersPage() {
                   )}
                 </button>
                 {renderStatusBadge(selectedOrder.status)}
+                {renderReadinessBadge(selectedOrder)}
+                {renderPaymentStatusBadge(selectedOrder)}
               </div>
 
               <div className="flex items-center gap-2">
@@ -1166,6 +1625,68 @@ function AdminOrdersPage() {
                 </div>
               </div>
 
+              {/* Customer Direct Communication Shortcuts */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-card p-4 border border-border/80 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <MessageSquare className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-foreground">
+                      Customer Communication
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      Direct contact options for {selectedOrder.customer_name}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Email Client Shortcut */}
+                  <a
+                    href={getEmailMailtoUrl(
+                      selectedOrder.customer_email,
+                      `SC FrostHeaven — Custom Cake Order #${selectedOrder.id.slice(0, 8).toUpperCase()}`,
+                      `Hello ${selectedOrder.customer_name},\n\nThank you for choosing SC FrostHeaven for your custom cake order (#${selectedOrder.id.slice(0, 8).toUpperCase()}).\n\n\nWarm regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+                    )}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 hover:bg-secondary text-foreground px-3.5 py-1.5 text-xs font-semibold border border-border/70 transition-colors shadow-xs"
+                  >
+                    <Mail className="h-3.5 w-3.5 text-primary" />
+                    <span>Open Email</span>
+                  </a>
+
+                  {/* WhatsApp Shortcut */}
+                  {(() => {
+                    const waUrl = getWhatsAppUrl(
+                      selectedOrder.customer_phone,
+                      `Hello ${selectedOrder.customer_name}, this is SC FrostHeaven regarding your custom cake order #${selectedOrder.id.slice(0, 8).toUpperCase()}.`,
+                    );
+                    if (waUrl) {
+                      return (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-semibold transition-colors shadow-xs"
+                        >
+                          <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                          <span>WhatsApp</span>
+                        </a>
+                      );
+                    }
+                    return (
+                      <span
+                        title="Valid phone number not provided"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-muted text-muted-foreground px-3.5 py-1.5 text-xs font-medium border border-border cursor-not-allowed opacity-60"
+                      >
+                        <Phone className="h-3.5 w-3.5" />
+                        <span>WhatsApp (No Phone)</span>
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+
               {/* Cake Details Box */}
               <div className="space-y-2">
                 <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground uppercase tracking-wider">
@@ -1177,35 +1698,629 @@ function AdminOrdersPage() {
                 </div>
               </div>
 
+              {/* 4b. Structured Quotation & Payment Management Section */}
+              <div className="space-y-4 rounded-3xl bg-secondary/15 p-5 border border-border/80 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <Receipt className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Quotation & Payment Management
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Authoritative whole LKR pricing, deposit tracking & payment audit
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Section Switcher Tabs */}
+                  <div className="flex rounded-full bg-secondary/80 p-1 border border-border/60 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setFinancialSectionTab("overview")}
+                      className={`rounded-full px-3 py-1 font-semibold transition-all cursor-pointer ${
+                        financialSectionTab === "overview"
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Overview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFinancialSectionTab("quote")}
+                      className={`rounded-full px-3 py-1 font-semibold transition-all cursor-pointer ${
+                        financialSectionTab === "quote"
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Quotation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFinancialSectionTab("payment")}
+                      className={`rounded-full px-3 py-1 font-semibold transition-all cursor-pointer ${
+                        financialSectionTab === "payment"
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Record Payment
+                    </button>
+                  </div>
+                </div>
+
+                {/* TAB 1: FINANCIAL OVERVIEW */}
+                {financialSectionTab === "overview" && (
+                  <div className="space-y-4">
+                    {/* Production Readiness Operational State Card */}
+                    {(() => {
+                      const readiness = getProductionReadiness(selectedOrder);
+                      const paymentInfo = getPaymentBadgeInfo(selectedOrder);
+                      return (
+                        <div
+                          className={`rounded-2xl border p-4 text-xs space-y-1.5 ${readiness.bgClass} ${readiness.borderClass}`}
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="font-bold flex items-center gap-1.5 text-foreground">
+                              <span className={`h-2 w-2 rounded-full ${readiness.dotClass}`} />
+                              Production Readiness: {readiness.label}
+                            </span>
+                            <span
+                              className={`font-mono text-[11px] font-semibold px-2 py-0.5 rounded-full border ${paymentInfo.badgeClass}`}
+                            >
+                              {paymentInfo.label}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground leading-relaxed">
+                            {readiness.description}
+                          </p>
+                        </div>
+                      );
+                    })()}
+                    {/* Partial Payment Banner (Section 4) */}
+                    {selectedOrder.deposit_amount_lkr !== null &&
+                      selectedOrder.deposit_amount_lkr !== undefined &&
+                      selectedOrder.deposit_amount_lkr > 0 &&
+                      (selectedOrder.amount_paid_lkr ?? 0) > 0 &&
+                      (selectedOrder.amount_paid_lkr ?? 0) < selectedOrder.deposit_amount_lkr && (
+                        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 space-y-1">
+                          <div className="flex items-center gap-1.5 font-semibold text-amber-800">
+                            <Clock className="h-3.5 w-3.5 text-amber-600" />
+                            <span>Partial Payment Received</span>
+                          </div>
+                          <p className="text-amber-800/90 leading-relaxed">
+                            <span className="font-semibold">
+                              {formatLKR(selectedOrder.amount_paid_lkr)}
+                            </span>{" "}
+                            received &bull;{" "}
+                            <span className="font-semibold">
+                              {formatLKR(
+                                (selectedOrder.deposit_amount_lkr ?? 0) -
+                                  (selectedOrder.amount_paid_lkr ?? 0),
+                              )}
+                            </span>{" "}
+                            remaining to reach deposit &bull;{" "}
+                            <span className="font-semibold">
+                              {formatLKR(
+                                Math.max(
+                                  (selectedOrder.quoted_price_lkr ?? 0) -
+                                    (selectedOrder.amount_paid_lkr ?? 0),
+                                  0,
+                                ),
+                              )}
+                            </span>{" "}
+                            outstanding.
+                          </p>
+                        </div>
+                      )}
+
+                    {/* 4 Summary Stat Tiles */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {/* Total Quote */}
+                      <div className="rounded-2xl bg-card p-3.5 border border-border/50 shadow-xs">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Total Quoted
+                        </span>
+                        <p className="text-base font-bold text-foreground mt-0.5">
+                          {formatLKR(selectedOrder.quoted_price_lkr)}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {selectedOrder.quote_issued_at
+                            ? `Issued ${formatDate(selectedOrder.quote_issued_at)}`
+                            : "Not yet quoted"}
+                        </span>
+                      </div>
+
+                      {/* Required Deposit */}
+                      <div className="rounded-2xl bg-card p-3.5 border border-border/50 shadow-xs">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Required Deposit
+                        </span>
+                        <p className="text-base font-bold text-foreground mt-0.5">
+                          {formatLKR(selectedOrder.deposit_amount_lkr)}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {selectedOrder.quoted_price_lkr && selectedOrder.deposit_amount_lkr
+                            ? `${Math.round((selectedOrder.deposit_amount_lkr / selectedOrder.quoted_price_lkr) * 100)}% of quote`
+                            : "—"}
+                        </span>
+                      </div>
+
+                      {/* Amount Paid */}
+                      <div className="rounded-2xl bg-card p-3.5 border border-border/50 shadow-xs">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Amount Paid
+                        </span>
+                        <p className="text-base font-bold text-emerald-600 mt-0.5">
+                          {formatLKR(selectedOrder.amount_paid_lkr ?? 0)}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {selectedOrder.deposit_paid_at
+                            ? `Deposit verified ${formatDate(selectedOrder.deposit_paid_at)}`
+                            : (selectedOrder.amount_paid_lkr ?? 0) > 0
+                              ? "Partial funds recorded"
+                              : "No verified funds"}
+                        </span>
+                      </div>
+
+                      {/* Balance Due */}
+                      <div className="rounded-2xl bg-card p-3.5 border border-border/50 shadow-xs">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Outstanding Balance
+                        </span>
+                        <p className="text-base font-bold text-foreground mt-0.5">
+                          {selectedOrder.quoted_price_lkr !== null &&
+                          selectedOrder.quoted_price_lkr !== undefined
+                            ? formatLKR(
+                                Math.max(
+                                  (selectedOrder.quoted_price_lkr ?? 0) -
+                                    (selectedOrder.amount_paid_lkr ?? 0),
+                                  0,
+                                ),
+                              )
+                            : "Not Quoted"}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {(selectedOrder.quoted_price_lkr ?? 0) > 0 &&
+                          (selectedOrder.quoted_price_lkr ?? 0) <=
+                            (selectedOrder.amount_paid_lkr ?? 0)
+                            ? "Fully settled"
+                            : selectedOrder.quoted_price_lkr !== null &&
+                                selectedOrder.quoted_price_lkr !== undefined
+                              ? `${formatLKR(
+                                  Math.max(
+                                    (selectedOrder.quoted_price_lkr ?? 0) -
+                                      (selectedOrder.amount_paid_lkr ?? 0),
+                                    0,
+                                  ),
+                                )} outstanding`
+                              : "Awaiting quotation"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Payment Status & Method Row */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-3.5 border border-border/50 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-muted-foreground font-medium">Payment State:</span>
+                        {renderPaymentStatusBadge(selectedOrder)}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span className="font-medium">Method:</span>
+                        <span className="font-semibold text-foreground">
+                          {selectedOrder.payment_method
+                            ? PAYMENT_METHOD_LABELS[selectedOrder.payment_method] ||
+                              selectedOrder.payment_method
+                            : "Not recorded"}
+                        </span>
+                      </div>
+
+                      {selectedOrder.fully_paid_at && (
+                        <div className="flex items-center gap-1.5 text-emerald-600 font-medium">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Fully paid on {formatDate(selectedOrder.fully_paid_at)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Admin-Only Payment Audit Trail */}
+                    {(selectedOrder.payment_reference || selectedOrder.payment_notes) && (
+                      <div className="space-y-2 rounded-2xl bg-amber-500/5 p-3.5 border border-amber-500/20 text-xs">
+                        <div className="flex items-center gap-1.5 font-semibold text-amber-800">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>Admin-Only Payment Audit Information</span>
+                        </div>
+                        {selectedOrder.payment_reference && (
+                          <p className="text-muted-foreground">
+                            <span className="font-medium text-foreground">Payment Reference:</span>{" "}
+                            <span className="font-mono bg-card px-2 py-0.5 rounded border border-border/60 text-foreground">
+                              {selectedOrder.payment_reference}
+                            </span>
+                          </p>
+                        )}
+                        {selectedOrder.payment_notes && (
+                          <p className="text-muted-foreground">
+                            <span className="font-medium text-foreground">Audit Notes:</span>{" "}
+                            <span className="text-foreground">{selectedOrder.payment_notes}</span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Quick Action Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFinancialSectionTab("quote")}
+                        className="rounded-full text-xs h-8 px-3 gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <BadgePercent className="h-3.5 w-3.5 text-primary" />
+                        <span>Edit Quotation</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        onClick={() => setFinancialSectionTab("payment")}
+                        disabled={!selectedOrder.quoted_price_lkr}
+                        className="rounded-full text-xs h-8 px-3 gap-1.5 cursor-pointer bg-primary text-primary-foreground shadow-xs"
+                      >
+                        <Banknote className="h-3.5 w-3.5" />
+                        <span>Record / Update Payment</span>
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: QUOTATION BUILDER */}
+                {financialSectionTab === "quote" && (
+                  <div className="space-y-4 pt-1">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                          <span>Total Quoted Price (LKR) *</span>
+                          <span className="text-[10px] text-muted-foreground font-normal">
+                            Whole LKR Integer
+                          </span>
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="e.g. 18500"
+                          value={quotedPriceInput}
+                          onChange={(e) => setQuotedPriceInput(e.target.value)}
+                          className="rounded-xl bg-card border-border/70 text-xs font-medium"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                          <span>Required Deposit (LKR)</span>
+                          <span className="text-[10px] text-muted-foreground font-normal">
+                            &le; Quoted Price
+                          </span>
+                        </label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={quotedPriceInput ? parseInt(quotedPriceInput, 10) || 0 : undefined}
+                          step="1"
+                          placeholder="e.g. 9250"
+                          value={depositAmountInput}
+                          onChange={(e) => setDepositAmountInput(e.target.value)}
+                          className="rounded-xl bg-card border-border/70 text-xs font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Deposit Preset Buttons */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                      <span className="text-muted-foreground font-medium">Deposit Presets:</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!quotedPriceInput || parseInt(quotedPriceInput, 10) <= 0}
+                        onClick={() => {
+                          const p = parseInt(quotedPriceInput, 10) || 0;
+                          setDepositAmountInput(String(Math.round(p * 0.5)));
+                        }}
+                        className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                      >
+                        50% Deposit (
+                        {formatLKR(Math.round((parseInt(quotedPriceInput, 10) || 0) * 0.5))})
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!quotedPriceInput || parseInt(quotedPriceInput, 10) <= 0}
+                        onClick={() => {
+                          setDepositAmountInput(quotedPriceInput);
+                        }}
+                        className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                      >
+                        100% Full Prepayment
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDepositAmountInput("0")}
+                        className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                      >
+                        No Deposit (0 LKR)
+                      </Button>
+                    </div>
+
+                    {/* Quote Calculation Preview */}
+                    {quotedPriceInput && parseInt(quotedPriceInput, 10) > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 rounded-2xl bg-card p-3 border border-border/60 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Quoted Total:</span>
+                          <p className="font-bold text-foreground">
+                            {formatLKR(parseInt(quotedPriceInput, 10))}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Deposit Requirement:</span>
+                          <p className="font-bold text-amber-700">
+                            {formatLKR(parseInt(depositAmountInput, 10) || 0)}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Balance on Completion:</span>
+                          <p className="font-bold text-foreground">
+                            {formatLKR(
+                              Math.max(
+                                (parseInt(quotedPriceInput, 10) || 0) -
+                                  (parseInt(depositAmountInput, 10) || 0),
+                                0,
+                              ),
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-3 border-t border-border/40">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setFinancialSectionTab("overview")}
+                        className="rounded-full text-xs cursor-pointer"
+                      >
+                        Back to Overview
+                      </Button>
+
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSaveQuote}
+                        disabled={isSavingQuote}
+                        className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs"
+                      >
+                        {isSavingQuote ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Saving Quotation...
+                          </>
+                        ) : (
+                          "Save & Issue Quotation"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: RECORD PAYMENT */}
+                {financialSectionTab === "payment" && (
+                  <div className="space-y-4 pt-1">
+                    {!selectedOrder.quoted_price_lkr ? (
+                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-900">
+                        <AlertCircle className="h-4 w-4 mb-1 text-amber-700" />A structured
+                        quotation must be created and saved before payments can be recorded.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                              <span>Verified Amount Paid (LKR) *</span>
+                              <span className="text-[10px] text-muted-foreground font-normal">
+                                Max: {formatLKR(selectedOrder.quoted_price_lkr)}
+                              </span>
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              max={selectedOrder.quoted_price_lkr}
+                              step="1"
+                              placeholder="e.g. 9250"
+                              value={amountPaidInput}
+                              onChange={(e) => setAmountPaidInput(e.target.value)}
+                              className="rounded-xl bg-card border-border/70 text-xs font-medium"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground">
+                              Payment Collection Method
+                            </label>
+                            <select
+                              value={paymentMethodInput}
+                              onChange={(e) => setPaymentMethodInput(e.target.value)}
+                              className="w-full rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium text-foreground focus:outline-none"
+                            >
+                              <option value="bank_transfer">Bank Transfer</option>
+                              <option value="cash_on_pickup">Cash at Bakery / Pickup</option>
+                              <option value="card_pos">Card / POS Terminal</option>
+                              <option value="online_payment">Online Payment</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                              <span>Payment / Bank Reference</span>
+                              <span className="text-[10px] text-muted-foreground font-normal">
+                                Staff only
+                              </span>
+                            </label>
+                            <Input
+                              placeholder="e.g. BOC-SLIP-981240, TXN-COMM-291823"
+                              value={paymentReferenceInput}
+                              onChange={(e) => setPaymentReferenceInput(e.target.value)}
+                              className="rounded-xl bg-card border-border/70 text-xs"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                              <span>Payment Audit Notes</span>
+                              <span className="text-[10px] text-muted-foreground font-normal">
+                                Staff only
+                              </span>
+                            </label>
+                            <Input
+                              placeholder="e.g. Verified on Commercial Bank portal by Chamalka"
+                              value={paymentNotesInput}
+                              onChange={(e) => setPaymentNotesInput(e.target.value)}
+                              className="rounded-xl bg-card border-border/70 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick Payment Preset Buttons */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                          <span className="text-muted-foreground font-medium">
+                            Quick Amount Presets:
+                          </span>
+                          {selectedOrder.deposit_amount_lkr !== null &&
+                            selectedOrder.deposit_amount_lkr !== undefined &&
+                            selectedOrder.deposit_amount_lkr > 0 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setAmountPaidInput(String(selectedOrder.deposit_amount_lkr))
+                                }
+                                className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                              >
+                                Mark Deposit Paid ({formatLKR(selectedOrder.deposit_amount_lkr)})
+                              </Button>
+                            )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setAmountPaidInput(String(selectedOrder.quoted_price_lkr))
+                            }
+                            className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                          >
+                            Mark Fully Paid ({formatLKR(selectedOrder.quoted_price_lkr)})
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setAmountPaidInput("0")}
+                            className="rounded-full text-[11px] h-7 px-2.5 cursor-pointer"
+                          >
+                            Reset to 0
+                          </Button>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-between pt-3 border-t border-border/40">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setFinancialSectionTab("overview")}
+                            className="rounded-full text-xs cursor-pointer"
+                          >
+                            Back to Overview
+                          </Button>
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleSavePayment}
+                            disabled={isSavingPayment}
+                            className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs"
+                          >
+                            {isSavingPayment ? (
+                              <>
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                Saving Payment...
+                              </>
+                            ) : (
+                              "Save Payment Record"
+                            )}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Customer Message & Internal Bakery Notes Dual Editor */}
               <div className="space-y-4">
                 {/* Customer Facing Message */}
                 <div className="space-y-2 rounded-2xl bg-primary/5 p-4 sm:p-5 border border-primary/20">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                      <ShieldCheck className="h-4 w-4" />
-                      Message to Customer (Quotation & Updates)
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                        <FileText className="h-4 w-4" />
+                        Message to Customer (Quotation & Updates)
+                      </h4>
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary border border-primary/20">
+                        Customer Visible
+                      </span>
+                    </div>
                     <span className="text-[11px] text-muted-foreground font-normal">
                       Visible to customer on their account order tracking page
                     </span>
                   </div>
                   <Textarea
                     rows={3}
-                    placeholder="Enter quote pricing details, flavor options, or pickup instructions for the customer..."
+                    placeholder="Enter quote pricing details, flavor options, pickup instructions, or celebration notes for the customer..."
                     value={customerMessageText}
                     onChange={(e) => setCustomerMessageText(e.target.value)}
                     className="rounded-2xl bg-card border-border/60 text-xs text-foreground placeholder:text-muted-foreground"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    Tip: Use this field to give the customer instructions, pickup timeframes, or
+                    flavor confirmation notes. Empty messages are automatically hidden from the
+                    customer view.
+                  </p>
                 </div>
 
                 {/* Internal Bakery / Kitchen Notes */}
                 <div className="space-y-2 rounded-2xl bg-secondary/30 p-4 sm:p-5 border border-border/60">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                      <FileText className="h-4 w-4 text-primary" />
-                      Internal Bakery Notes (Private)
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        Internal Bakery Notes
+                      </h4>
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-muted-foreground border border-border">
+                        Staff Only — Private
+                      </span>
+                    </div>
                     <span className="text-[11px] text-muted-foreground font-normal">
                       Bakery staff & kitchen run sheet only — Never shared with customer
                     </span>
@@ -1224,7 +2339,7 @@ function AdminOrdersPage() {
                     size="sm"
                     onClick={handleSaveNotes}
                     disabled={isSavingNotes}
-                    className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs"
+                    className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs font-semibold"
                   >
                     {isSavingNotes ? (
                       <>

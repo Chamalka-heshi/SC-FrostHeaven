@@ -9,8 +9,11 @@ import {
   CheckCircle2,
   Clock,
   ShieldCheck,
+  Receipt,
+  AlertTriangle,
 } from "lucide-react";
 import type { KitchenOrder } from "@/components/kitchen-production-view";
+import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
 
 interface DailyProductionSummaryModalProps {
   orders: KitchenOrder[];
@@ -52,7 +55,14 @@ export function DailyProductionSummaryModal({
 
   const inBakingCount = dayOrders.filter((o) => o.status.toLowerCase() === "in_baking").length;
   const readyCount = dayOrders.filter((o) => o.status.toLowerCase() === "ready").length;
-  const acceptedCount = dayOrders.filter((o) => o.status.toLowerCase() === "accepted").length;
+  const awaitingDepositCount = dayOrders.filter((o) => {
+    const r = getProductionReadiness(o);
+    return o.status.toLowerCase() === "accepted" && r.key === "awaiting_deposit";
+  }).length;
+  const readyToBakeCount = dayOrders.filter((o) => {
+    const r = getProductionReadiness(o);
+    return r.key === "ready_for_production";
+  }).length;
   const totalCount = dayOrders.length;
 
   const handlePrint = () => {
@@ -73,7 +83,7 @@ export function DailyProductionSummaryModal({
                 Daily Kitchen Production Summary
               </h3>
               <p className="text-xs text-muted-foreground">
-                Printable operational run sheet for kitchen staff
+                Printable operational run sheet for kitchen & baking staff
               </p>
             </div>
           </div>
@@ -98,7 +108,10 @@ export function DailyProductionSummaryModal({
         </div>
 
         {/* Printable Production Sheet Body */}
-        <div className="p-6 sm:p-8 overflow-y-auto space-y-6 print:p-0 print:overflow-visible text-foreground">
+        <div
+          id="daily-summary-printable"
+          className="p-6 sm:p-8 overflow-y-auto space-y-6 print:p-0 print:overflow-visible text-foreground"
+        >
           {/* Bakery Header & Branding */}
           <div className="border-b-2 border-primary/40 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
@@ -139,16 +152,16 @@ export function DailyProductionSummaryModal({
 
             <div className="rounded-2xl border border-teal-500/30 p-3.5 bg-teal-500/5">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-teal-700">
-                Ready
+                Ready for Pickup
               </span>
               <div className="text-2xl font-bold text-teal-700 mt-0.5">{readyCount}</div>
             </div>
 
-            <div className="rounded-2xl border border-blue-500/30 p-3.5 bg-blue-500/5">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
-                Accepted (Pending)
+            <div className="rounded-2xl border border-emerald-500/30 p-3.5 bg-emerald-500/5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                Ready to Bake
               </span>
-              <div className="text-2xl font-bold text-blue-700 mt-0.5">{acceptedCount}</div>
+              <div className="text-2xl font-bold text-emerald-700 mt-0.5">{readyToBakeCount}</div>
             </div>
           </div>
 
@@ -167,14 +180,14 @@ export function DailyProductionSummaryModal({
                     <th className="py-3 px-3">Celebration</th>
                     <th className="py-3 px-3">Event Date</th>
                     <th className="py-3 px-3 w-1/3">Cake Details & Specs</th>
-                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3">Payment & Readiness</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {dayOrders.map((order) => {
                     const shortId = order.id.slice(0, 8).toUpperCase();
-                    const isBaking = order.status.toLowerCase() === "in_baking";
-                    const isReady = order.status.toLowerCase() === "ready";
+                    const readiness = getProductionReadiness(order);
+                    const paymentInfo = getPaymentBadgeInfo(order);
 
                     return (
                       <tr key={order.id} className="hover:bg-muted/20">
@@ -204,18 +217,22 @@ export function DailyProductionSummaryModal({
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-3 align-top whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                              isBaking
-                                ? "bg-purple-100 text-purple-800"
-                                : isReady
-                                  ? "bg-teal-100 text-teal-800"
-                                  : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {order.status.replace(/_/g, " ").toUpperCase()}
-                          </span>
+                        <td className="py-3 px-3 align-top whitespace-nowrap space-y-1">
+                          <div>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold border ${readiness.badgeClass}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${readiness.dotClass}`} />
+                              {readiness.label}
+                            </span>
+                          </div>
+                          <div>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${paymentInfo.badgeClass}`}
+                            >
+                              {paymentInfo.label}
+                            </span>
+                          </div>
                         </td>
                       </tr>
                     );

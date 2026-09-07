@@ -165,7 +165,11 @@ export function NotificationCenter() {
 
       {/* 2. Slide-over / Dropdown Popover */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-[340px] sm:w-[380px] max-w-[90vw] rounded-3xl bg-card shadow-2xl border border-border/80 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150">
+        <div
+          role="dialog"
+          aria-label="Notifications popover"
+          className="absolute right-0 mt-2 w-[340px] sm:w-[380px] max-w-[90vw] rounded-3xl bg-card shadow-2xl border border-border/80 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150"
+        >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/60 px-5 py-3.5 bg-muted/30">
             <div className="flex items-center gap-2">
@@ -181,7 +185,8 @@ export function NotificationCenter() {
               <button
                 type="button"
                 onClick={() => markAllAsRead()}
-                className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors cursor-pointer focus:outline-none focus:underline"
+                aria-label="Mark all notifications as read"
               >
                 <CheckCheck className="h-3.5 w-3.5" />
                 <span>Mark all read</span>
@@ -190,7 +195,7 @@ export function NotificationCenter() {
           </div>
 
           {/* Scrollable Notification List */}
-          <div className="max-h-[380px] overflow-y-auto divide-y divide-border/40">
+          <div className="max-h-[380px] overflow-y-auto divide-y divide-border/40" role="list">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-10 text-muted-foreground space-y-2">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -216,8 +221,17 @@ export function NotificationCenter() {
                 return (
                   <div
                     key={n.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleNotificationClick(n)}
-                    className={`flex items-start gap-3 p-4 transition-colors cursor-pointer hover:bg-secondary/40 ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleNotificationClick(n);
+                      }
+                    }}
+                    aria-label={`${n.title}: ${n.message}${!n.is_read ? " (Unread)" : ""}`}
+                    className={`flex items-start gap-3 p-4 transition-colors cursor-pointer hover:bg-secondary/40 focus:bg-secondary/40 focus:outline-none ${
                       !n.is_read ? "bg-primary/5 font-medium" : "opacity-90"
                     }`}
                   >

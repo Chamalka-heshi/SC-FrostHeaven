@@ -32,10 +32,14 @@ import {
   XCircle,
   Inbox,
   Download,
+  Banknote,
+  Receipt,
+  DollarSign,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { exportToCsv } from "@/lib/csv-export";
+import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
 
 export const Route = createFileRoute("/admin/customers")({
   head: () => ({
@@ -72,6 +76,16 @@ interface CustomOrder {
   customer_message?: string | null | undefined;
   internal_notes?: string | null | undefined;
   admin_notes?: string | null | undefined;
+  quoted_price_lkr?: number | null | undefined;
+  deposit_amount_lkr?: number | null | undefined;
+  amount_paid_lkr?: number | undefined;
+  payment_status?: string | null | undefined;
+  payment_method?: string | null | undefined;
+  payment_reference?: string | null | undefined;
+  payment_notes?: string | null | undefined;
+  quote_issued_at?: string | null | undefined;
+  deposit_paid_at?: string | null | undefined;
+  fully_paid_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -80,6 +94,7 @@ interface EnrichedCustomer extends CustomerProfile {
   orders: CustomOrder[];
   ordersCount: number;
   latestOrder: CustomOrder | null;
+  totalSpentLkr: number;
 }
 
 const ALL_STATUSES = [
@@ -198,7 +213,7 @@ function AdminCustomersPage() {
     setErrorMessage(null);
 
     try {
-      const [profilesRes, ordersRes] = await Promise.all([
+      const [profilesRes, initialOrdersRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("id, full_name, email, phone, address, city, role, created_at, updated_at")
@@ -206,16 +221,35 @@ function AdminCustomersPage() {
         supabase
           .from("custom_orders")
           .select(
-            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
           )
           .order("created_at", { ascending: false }),
       ]);
 
       if (profilesRes.error) throw profilesRes.error;
-      if (ordersRes.error) throw ordersRes.error;
+
+      let ordersData = initialOrdersRes.data as CustomOrder[] | null;
+      if (
+        initialOrdersRes.error &&
+        (initialOrdersRes.error.code === "42703" ||
+          initialOrdersRes.error.message?.includes("quoted_price_lkr") ||
+          initialOrdersRes.error.message?.includes("does not exist"))
+      ) {
+        console.warn("Structured payment columns not detected on custom_orders. Falling back to base columns.");
+        const fallbackRes = await supabase
+          .from("custom_orders")
+          .select(
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+          )
+          .order("created_at", { ascending: false });
+        if (fallbackRes.error) throw fallbackRes.error;
+        ordersData = fallbackRes.data as CustomOrder[] | null;
+      } else if (initialOrdersRes.error) {
+        throw initialOrdersRes.error;
+      }
 
       setCustomers((profilesRes.data as CustomerProfile[]) || []);
-      setOrders((ordersRes.data as CustomOrder[]) || []);
+      setOrders(ordersData || []);
       setLastUpdated(new Date());
 
       if (isManual) {
@@ -242,11 +276,16 @@ function AdminCustomersPage() {
     return customers.map((c) => {
       const customerOrders = orders.filter((o) => o.customer_id === c.id);
       const latestOrder = customerOrders.length > 0 ? (customerOrders[0] ?? null) : null;
+      const totalSpentLkr = customerOrders.reduce(
+        (sum, o) => sum + Number(o.amount_paid_lkr || 0),
+        0,
+      );
       return {
         ...c,
         orders: customerOrders,
         ordersCount: customerOrders.length,
         latestOrder,
+        totalSpentLkr,
       };
     });
   }, [customers, orders]);
@@ -347,6 +386,7 @@ function AdminCustomersPage() {
       "Address",
       "Role",
       "Total Orders",
+      "Total Spent (LKR)",
       "Latest Order ID",
       "Latest Order Status",
       "Registered Date",
@@ -360,6 +400,7 @@ function AdminCustomersPage() {
       c.address || "",
       c.role,
       c.ordersCount,
+      formatLKR(c.totalSpentLkr),
       c.latestOrder?.id || "",
       c.latestOrder?.status || "",
       c.created_at,
@@ -442,6 +483,31 @@ function AdminCustomersPage() {
           </span>
         );
     }
+  };
+
+  // Helper: Production Readiness badge renderer
+  const renderReadinessBadge = (order: CustomOrder) => {
+    const info = getProductionReadiness(order);
+    return (
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${info.badgeClass}`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${info.dotClass}`} />
+        {info.label}
+      </span>
+    );
+  };
+
+  // Helper: Payment status pill renderer
+  const renderPaymentBadge = (order: CustomOrder) => {
+    const info = getPaymentBadgeInfo(order);
+    return (
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border ${info.badgeClass}`}
+      >
+        {info.label}
+      </span>
+    );
   };
 
   // Helper: Date formatters
@@ -1132,58 +1198,90 @@ function AdminCustomersPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {selectedCustomer.orders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="rounded-2xl border border-border/70 bg-muted/20 p-4 space-y-3"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-foreground">
-                              #{order.id.slice(0, 8)}
-                            </span>
-                            <span className="font-medium text-xs text-foreground">
-                              • {order.event_type}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {renderStatusBadge(order.status)}
-                            <Link
-                              to="/admin/orders"
-                              className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
-                            >
-                              <span>Manage</span>
-                              <ArrowRight className="h-3 w-3" />
-                            </Link>
-                          </div>
-                        </div>
+                    {selectedCustomer.orders.map((order) => {
+                      const quoted = Number(order.quoted_price_lkr || 0);
+                      const depositReq = Number(order.deposit_amount_lkr || 0);
+                      const paid = Number(order.amount_paid_lkr || 0);
+                      const balance = Math.max(0, quoted - paid);
 
-                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                          <div>
-                            <span>Event Date:</span>
-                            <p className="font-semibold text-foreground flex items-center gap-1 mt-0.5">
-                              <Calendar className="h-3 w-3 text-primary" />
-                              {formatDate(order.event_date)}
-                            </p>
+                      return (
+                        <div
+                          key={order.id}
+                          className="rounded-2xl border border-border/70 bg-muted/20 p-4 space-y-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-foreground">
+                                #{order.id.slice(0, 8)}
+                              </span>
+                              <span className="font-medium text-xs text-foreground">
+                                • {order.event_type}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {renderStatusBadge(order.status)}
+                              {renderReadinessBadge(order)}
+                              <Link
+                                to="/admin/orders"
+                                className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
+                              >
+                                <span>Manage</span>
+                                <ArrowRight className="h-3 w-3" />
+                              </Link>
+                            </div>
                           </div>
-                          <div>
-                            <span>Submitted:</span>
-                            <p className="font-medium text-foreground mt-0.5">
-                              {formatDate(order.created_at)}
-                            </p>
-                          </div>
-                        </div>
 
-                        {order.cake_details && (
-                          <div className="rounded-xl bg-background p-3 text-xs text-foreground leading-relaxed border border-border/50">
-                            <span className="text-[10px] font-semibold uppercase text-muted-foreground block mb-1">
-                              Cake Vision & Specifications:
-                            </span>
-                            <p className="line-clamp-3">{order.cake_details}</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                            <div>
+                              <span>Event Date:</span>
+                              <p className="font-semibold text-foreground flex items-center gap-1 mt-0.5">
+                                <Calendar className="h-3 w-3 text-primary" />
+                                {formatDate(order.event_date)}
+                              </p>
+                            </div>
+                            <div>
+                              <span>Submitted:</span>
+                              <p className="font-medium text-foreground mt-0.5">
+                                {formatDate(order.created_at)}
+                              </p>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          {/* Structured Financial Summary */}
+                          {quoted > 0 && (
+                            <div className="rounded-xl border border-border/50 bg-background/60 p-2.5 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <div>
+                                <span className="text-[10px] text-muted-foreground block">Quoted Total:</span>
+                                <span className="font-bold text-foreground">{formatLKR(quoted)}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground block">Deposit Req:</span>
+                                <span className="font-medium text-foreground">{depositReq > 0 ? formatLKR(depositReq) : "None"}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground block">Paid:</span>
+                                <span className="font-bold text-emerald-700">{formatLKR(paid)}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-muted-foreground block">Balance:</span>
+                                <span className={`font-bold ${balance > 0 ? "text-amber-700" : "text-muted-foreground"}`}>
+                                  {formatLKR(balance)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {order.cake_details && (
+                            <div className="rounded-xl bg-background p-3 text-xs text-foreground leading-relaxed border border-border/50">
+                              <span className="text-[10px] font-semibold uppercase text-muted-foreground block mb-1">
+                                Cake Vision & Specifications:
+                              </span>
+                              <p className="line-clamp-3">{order.cake_details}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

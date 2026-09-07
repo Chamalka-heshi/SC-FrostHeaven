@@ -10,8 +10,12 @@ import {
   FileText,
   ImageIcon,
   ShieldCheck,
+  Receipt,
+  CheckCircle2,
+  AlertTriangle,
   X,
 } from "lucide-react";
+import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
 
 export interface TicketOrder {
   id: string;
@@ -26,6 +30,14 @@ export interface TicketOrder {
   customer_message?: string | null | undefined;
   internal_notes?: string | null | undefined;
   admin_notes?: string | null | undefined;
+  quoted_price_lkr?: number | null | undefined;
+  deposit_amount_lkr?: number | null | undefined;
+  amount_paid_lkr?: number | undefined;
+  payment_status?: string | null | undefined;
+  payment_method?: string | null | undefined;
+  quote_issued_at?: string | null | undefined;
+  deposit_paid_at?: string | null | undefined;
+  fully_paid_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -50,6 +62,13 @@ export function KitchenProductionTicket({
   onClose,
 }: KitchenProductionTicketProps) {
   const shortId = order.id.slice(0, 8).toUpperCase();
+  const readiness = getProductionReadiness(order);
+  const paymentInfo = getPaymentBadgeInfo(order);
+
+  const quoted = Number(order.quoted_price_lkr || 0);
+  const deposit = Number(order.deposit_amount_lkr || 0);
+  const paid = Number(order.amount_paid_lkr || 0);
+  const balanceDue = quoted > 0 ? Math.max(0, quoted - paid) : 0;
 
   const handlePrint = () => {
     window.print();
@@ -154,11 +173,53 @@ export function KitchenProductionTicket({
 
             <div className="col-span-2 sm:col-span-1">
               <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground print:text-black">
-                Production Status
+                Production Readiness
               </span>
               <p className="text-base font-bold text-foreground print:text-black uppercase mt-0.5">
-                {order.status.replace(/_/g, " ")}
+                {readiness.label}
               </p>
+            </div>
+          </div>
+
+          {/* Financial Clearance & Readiness Box for Kitchen Team */}
+          <div className="rounded-2xl border-2 border-black/60 print:border-black p-4 bg-muted/20 print:bg-white space-y-2">
+            <div className="flex items-center justify-between border-b border-border/60 print:border-black/40 pb-2">
+              <h4 className="text-xs uppercase tracking-wider font-bold text-foreground print:text-black flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5 text-primary print:text-black" />
+                Payment Clearance & Financial Status
+              </h4>
+              <span className="font-mono text-xs font-bold text-foreground print:text-black uppercase">
+                {paymentInfo.label}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-muted-foreground print:text-black">Quoted Total:</span>
+                <p className="font-bold text-foreground print:text-black">
+                  {formatLKR(order.quoted_price_lkr)}
+                </p>
+              </div>
+              {deposit > 0 && (
+                <div>
+                  <span className="text-muted-foreground print:text-black">Required Deposit:</span>
+                  <p className="font-semibold text-foreground print:text-black">
+                    {formatLKR(deposit)}
+                  </p>
+                </div>
+              )}
+              <div>
+                <span className="text-muted-foreground print:text-black">Paid to Date:</span>
+                <p className="font-bold text-foreground print:text-black">{formatLKR(paid)}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground print:text-black">
+                  Balance Due at Pickup:
+                </span>
+                <p className="font-bold text-foreground print:text-black">
+                  {balanceDue > 0 ? formatLKR(balanceDue) : "Cleared (LKR 0)"}
+                </p>
+              </div>
             </div>
           </div>
 

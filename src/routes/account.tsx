@@ -33,6 +33,10 @@ import {
   XCircle,
   HelpCircle,
   Star,
+  Info,
+  Receipt,
+  BadgePercent,
+  CreditCard,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -55,6 +59,21 @@ export const Route = createFileRoute("/account")({
   component: AccountPage,
 });
 
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: "Bank Transfer",
+  cash_on_pickup: "Cash at Bakery / Pickup",
+  card_pos: "Card / POS Terminal",
+  online_payment: "Online Payment",
+};
+
+export function formatLKR(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(amount)) return "—";
+  return `LKR ${new Intl.NumberFormat("en-LK", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)}`;
+}
+
 interface CustomOrder {
   id: string;
   customer_id: string | null;
@@ -67,6 +86,14 @@ interface CustomOrder {
   status: string;
   customer_message?: string | null | undefined;
   admin_notes?: string | null | undefined;
+  quoted_price_lkr?: number | null | undefined;
+  deposit_amount_lkr?: number | null | undefined;
+  amount_paid_lkr?: number | undefined;
+  payment_status?: string | null | undefined;
+  payment_method?: string | null | undefined;
+  quote_issued_at?: string | null | undefined;
+  deposit_paid_at?: string | null | undefined;
+  fully_paid_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -156,15 +183,39 @@ function AccountPage() {
     setOrdersError(null);
 
     try {
-      const { data, error } = await supabase
+      const { data: initialData, error } = await supabase
         .from("customer_custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, created_at, updated_at",
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
         )
         .eq("customer_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      let data = initialData;
+
+      if (
+        error &&
+        (error.code === "PGRST205" ||
+          error.code === "42703" ||
+          error.message?.includes("customer_custom_orders") ||
+          error.message?.includes("does not exist"))
+      ) {
+        console.warn(
+          "customer_custom_orders view not available. Falling back to custom_orders table.",
+        );
+        const fallbackRes = await supabase
+          .from("custom_orders")
+          .select(
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, created_at, updated_at",
+          )
+          .eq("customer_id", user.id)
+          .order("created_at", { ascending: false });
+        if (fallbackRes.error) throw fallbackRes.error;
+        data = (fallbackRes.data || []) as unknown as typeof data;
+      } else if (error) {
+        throw error;
+      }
+
       setOrders(data || []);
     } catch (err: unknown) {
       console.error("Error loading customer orders:", err);
@@ -311,21 +362,15 @@ function AccountPage() {
     }
   }, [deepLinkedOrderId, orders, selectedOrder, handleOpenOrder]);
 
-  // 5. Customer Action: Confirm Quote (quoted -> accepted)
+  // 5. Customer Action: Confirm Quote (quoted -> accepted) via Secure RPC
   const handleConfirmAcceptQuote = async (order: CustomOrder) => {
     if (!user || isPerformingAction) return;
     setIsPerformingAction(true);
 
     try {
-      const { error } = await supabase
-        .from("custom_orders")
-        .update({
-          status: "accepted",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", order.id)
-        .eq("customer_id", user.id)
-        .eq("status", "quoted"); // Enforces strict condition
+      const { error } = await supabase.rpc("accept_custom_order_quote", {
+        target_order_id: order.id,
+      });
 
       if (error) throw error;
 
@@ -352,21 +397,16 @@ function AccountPage() {
     }
   };
 
-  // 6. Customer Action: Cancel Request (submitted/under_review/quoted -> cancelled)
+  // 6. Customer Action: Cancel Request (submitted/under_review/quoted -> cancelled) via Secure RPC
   const handleConfirmCancelOrder = async (order: CustomOrder) => {
     if (!user || isPerformingAction) return;
     setIsPerformingAction(true);
 
     try {
-      const { error } = await supabase
-        .from("custom_orders")
-        .update({
-          status: "cancelled",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", order.id)
-        .eq("customer_id", user.id)
-        .in("status", ["submitted", "under_review", "quoted"]); // Restricts to cancelable unbaked statuses
+      const { error } = await supabase.rpc("cancel_custom_order", {
+        target_order_id: order.id,
+        cancel_reason: null,
+      });
 
       if (error) throw error;
 
@@ -445,63 +485,63 @@ function AccountPage() {
     switch (s) {
       case "submitted":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
             Submitted
           </span>
         );
       case "under_review":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 border border-indigo-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-400 border border-indigo-500/20">
             <Clock className="h-3 w-3" />
             Under Review
           </span>
         );
       case "quoted":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 border border-sky-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-400 border border-sky-500/20">
             <Sparkles className="h-3 w-3" />
-            Quote Ready
+            Quotation Ready
           </span>
         );
       case "accepted":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:text-blue-400 border border-blue-500/20">
             <CheckCircle2 className="h-3 w-3" />
-            Confirmed
+            Quotation Accepted
           </span>
         );
       case "in_baking":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-700 border border-purple-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:text-purple-400 border border-purple-500/20">
             <Clock className="h-3 w-3" />
             In Baking
           </span>
         );
       case "ready":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/10 px-2.5 py-1 text-xs font-semibold text-teal-700 border border-teal-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/10 px-2.5 py-1 text-xs font-semibold text-teal-700 dark:text-teal-400 border border-teal-500/20">
             <CheckCircle2 className="h-3 w-3" />
             Ready for Pickup
           </span>
         );
       case "completed":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
             <CheckCircle2 className="h-3 w-3" />
             Completed
           </span>
         );
       case "declined":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-700 border border-rose-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:text-rose-400 border border-rose-500/20">
             <AlertCircle className="h-3 w-3" />
             Declined
           </span>
         );
       case "cancelled":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-700 border border-zinc-500/20">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-500/10 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:text-zinc-400 border border-zinc-500/20">
             <AlertCircle className="h-3 w-3" />
             Cancelled
           </span>
@@ -513,6 +553,125 @@ function AccountPage() {
           </span>
         );
     }
+  };
+
+  // Helper: Customer-safe payment status badge renderer adhering strictly to Phase 6D specification
+  const renderCustomerPaymentBadge = (order: CustomOrder) => {
+    if (order.quoted_price_lkr === null || order.quoted_price_lkr === undefined) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border/50">
+          Quotation Not Issued
+        </span>
+      );
+    }
+
+    const price = order.quoted_price_lkr;
+    const deposit = order.deposit_amount_lkr ?? 0;
+    const paid = order.amount_paid_lkr ?? 0;
+
+    if (paid >= price && price > 0) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+          <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+          Fully Paid
+        </span>
+      );
+    }
+
+    if (deposit > 0 && paid >= deposit) {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-teal-700 dark:text-teal-400 border border-teal-500/20">
+          <Sparkles className="h-3 w-3 text-teal-600 dark:text-teal-400" />
+          Deposit Paid
+        </span>
+      );
+    }
+
+    if (deposit > 0 && paid > 0 && paid < deposit) {
+      return (
+        <span className="inline-flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
+            <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+            Payment Pending
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300 border border-amber-500/30">
+            Partial payment received
+          </span>
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/20">
+        <Clock className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+        Payment Pending
+      </span>
+    );
+  };
+
+  // Helper: Visual payment progress indicator
+  const renderPaymentProgressBar = (order: CustomOrder) => {
+    if (
+      order.quoted_price_lkr === null ||
+      order.quoted_price_lkr === undefined ||
+      order.quoted_price_lkr <= 0
+    ) {
+      return null;
+    }
+
+    const price = order.quoted_price_lkr;
+    const deposit = order.deposit_amount_lkr ?? 0;
+    const paid = order.amount_paid_lkr ?? 0;
+    const balance = Math.max(price - paid, 0);
+    const progressPercent = Math.min(100, Math.max(0, Math.round((paid / price) * 100)));
+
+    return (
+      <div className="space-y-2 rounded-2xl bg-secondary/30 p-4 border border-border/60">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold text-foreground">
+            {formatLKR(paid)} of {formatLKR(price)} paid
+          </span>
+          <span className="font-mono font-medium text-muted-foreground">{progressPercent}%</span>
+        </div>
+
+        <div className="h-2 w-full overflow-hidden rounded-full bg-secondary/80 border border-border/40">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              paid >= price
+                ? "bg-emerald-500"
+                : paid >= deposit && deposit > 0
+                  ? "bg-teal-500"
+                  : "bg-primary"
+            }`}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[11px] text-muted-foreground pt-0.5">
+          {deposit > 0 && paid > 0 && paid < deposit ? (
+            <span className="text-amber-700 dark:text-amber-400 font-medium">
+              Partial payment received: {formatLKR(paid)} received • Only{" "}
+              {formatLKR(deposit - paid)} remains to reach required deposit ({formatLKR(deposit)}).
+            </span>
+          ) : paid >= price ? (
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+              Your custom cake order is fully settled.
+            </span>
+          ) : deposit > 0 && paid >= deposit ? (
+            <span>
+              Deposit verified ({formatLKR(deposit)}) • {formatLKR(balance)} remaining balance to be
+              paid upon completion.
+            </span>
+          ) : (
+            <span>
+              {deposit > 0 ? `Required deposit: ${formatLKR(deposit)} • ` : ""}
+              {formatLKR(balance)} outstanding balance
+            </span>
+          )}
+          <span className="font-semibold text-foreground">Balance: {formatLKR(balance)}</span>
+        </div>
+      </div>
+    );
   };
 
   const formatDate = (dateStr: string) => {
@@ -844,27 +1003,140 @@ function AccountPage() {
                         <CustomOrderTimeline status={order.status} showExplanation={true} />
                       </div>
 
-                      {/* Prominent Quote / Instructions Banner (When Quoted) with Action Buttons */}
-                      {isQuoted && (
-                        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4">
-                          <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
-                            <Sparkles className="h-4 w-4 text-amber-600" />
-                            <span>Quotation &amp; Bakery Instructions Ready</span>
-                          </div>
-                          <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                            {order.customer_message ||
-                              order.admin_notes ||
-                              "Your custom cake request has been reviewed and quoted by our bakery team. Please review the details and click below to confirm your order."}
-                          </p>
+                      {/* Compact Financial Summary Row on Order Card */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-2xl bg-secondary/30 p-3.5 border border-border/60 text-xs">
+                        <div>
+                          <span className="text-[11px] text-muted-foreground block">
+                            Quoted Price
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {order.quoted_price_lkr !== null && order.quoted_price_lkr !== undefined
+                              ? formatLKR(order.quoted_price_lkr)
+                              : "Pending Quote"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-muted-foreground block">
+                            Required Deposit
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {order.deposit_amount_lkr !== null &&
+                            order.deposit_amount_lkr !== undefined
+                              ? order.deposit_amount_lkr > 0
+                                ? formatLKR(order.deposit_amount_lkr)
+                                : "No Deposit Required"
+                              : "Pending Quote"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-muted-foreground block">
+                            Payment Status
+                          </span>
+                          <div className="mt-0.5">{renderCustomerPaymentBadge(order)}</div>
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-muted-foreground block">
+                            Outstanding Balance
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {order.quoted_price_lkr !== null && order.quoted_price_lkr !== undefined
+                              ? formatLKR(
+                                  Math.max(
+                                    (order.quoted_price_lkr ?? 0) - (order.amount_paid_lkr ?? 0),
+                                    0,
+                                  ),
+                                )
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
 
-                          {/* Customer Confirmation Action Button */}
+                      {/* Prominent Quote Ready Banner (When Quoted) */}
+                      {isQuoted && (
+                        <div className="rounded-3xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4 shadow-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-amber-500/20 pb-3">
+                            <div className="flex items-center gap-2 text-sm font-bold text-amber-900 dark:text-amber-200">
+                              <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                              <span>🎂 Your Custom Cake Quote Is Ready</span>
+                            </div>
+                            {order.quote_issued_at && (
+                              <span className="text-xs text-amber-800/80 dark:text-amber-300/80 font-medium">
+                                Quote Issued: {formatDate(order.quote_issued_at)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Financial Metric Cards Grid */}
+                          {order.quoted_price_lkr !== null &&
+                            order.quoted_price_lkr !== undefined && (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div className="rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                                  <span className="text-[11px] font-medium text-muted-foreground block">
+                                    Total Quote
+                                  </span>
+                                  <p className="text-lg font-bold text-foreground mt-0.5">
+                                    {formatLKR(order.quoted_price_lkr)}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                                  <span className="text-[11px] font-medium text-muted-foreground block">
+                                    Required Deposit
+                                  </span>
+                                  <p className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+                                    {order.deposit_amount_lkr && order.deposit_amount_lkr > 0
+                                      ? formatLKR(order.deposit_amount_lkr)
+                                      : "No Deposit Required"}
+                                  </p>
+                                </div>
+
+                                <div className="col-span-2 sm:col-span-1 rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                                  <span className="text-[11px] font-medium text-muted-foreground block">
+                                    Outstanding Balance
+                                  </span>
+                                  <p className="text-lg font-bold text-foreground mt-0.5">
+                                    {formatLKR(
+                                      Math.max(
+                                        (order.quoted_price_lkr ?? 0) -
+                                          (order.amount_paid_lkr ?? 0),
+                                        0,
+                                      ),
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Payment Progress Bar */}
+                          {renderPaymentProgressBar(order)}
+
+                          {/* Customer Message from SC FrostHeaven */}
+                          {(order.customer_message || order.admin_notes) && (
+                            <div className="space-y-1.5 rounded-2xl bg-card/80 p-4 border border-amber-500/20 text-xs">
+                              <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                <FileText className="h-3.5 w-3.5 text-primary" />
+                                Message from SC FrostHeaven
+                              </span>
+                              <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                                {order.customer_message || order.admin_notes}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Neutral Payment Instructions Note */}
+                          <div className="flex items-center gap-2 rounded-xl bg-card/50 px-3.5 py-2 border border-amber-500/15 text-xs text-muted-foreground">
+                            <Info className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Payment instructions will be provided by SC FrostHeaven.</span>
+                          </div>
+
+                          {/* Customer Confirmation Action Buttons */}
                           <div className="pt-2 flex flex-wrap items-center gap-3">
                             <Button
                               onClick={() => setActionConfirmation({ type: "accept", order })}
                               className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer shadow-xs font-semibold"
                             >
                               <CheckCircle2 className="h-4 w-4" />
-                              <span>Accept Quote &amp; Confirm Order</span>
+                              <span>Accept Quote</span>
                             </Button>
                             <Button
                               variant="outline"
@@ -872,18 +1144,25 @@ function AccountPage() {
                               className="rounded-full text-xs h-9 px-4 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
                             >
                               <XCircle className="h-3.5 w-3.5 mr-1" />
-                              <span>Cancel Request</span>
+                              <span>Cancel Order</span>
                             </Button>
                           </div>
                         </div>
                       )}
 
-                      {/* Customer Message from FrostHeaven when not quoted */}
+                      {/* Payment Progress & Message for Non-Quoted Orders with Active Quotes */}
+                      {!isQuoted &&
+                        order.quoted_price_lkr !== null &&
+                        order.quoted_price_lkr !== undefined &&
+                        order.quoted_price_lkr > 0 &&
+                        renderPaymentProgressBar(order)}
+
+                      {/* Customer Message from SC FrostHeaven when not in quoted state */}
                       {!isQuoted && (order.customer_message || order.admin_notes) && (
                         <div className="rounded-2xl bg-secondary/30 border border-border/60 p-4 sm:p-5 space-y-2">
                           <div className="flex items-center gap-2 text-xs font-semibold text-primary">
                             <Sparkles className="h-3.5 w-3.5" />
-                            <span>Message from FrostHeaven</span>
+                            <span>Message from SC FrostHeaven</span>
                           </div>
                           <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
                             {order.customer_message || order.admin_notes}
@@ -1181,16 +1460,84 @@ function AccountPage() {
 
               {/* Prominent Quote / Instructions Banner with Action Buttons in Modal */}
               {selectedOrder.status.toLowerCase() === "quoted" && (
-                <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300">
-                    <Sparkles className="h-4 w-4 text-amber-600" />
-                    <span>Quotation &amp; Bakery Instructions Ready</span>
+                <div className="rounded-3xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-amber-500/20 pb-3">
+                    <div className="flex items-center gap-2 text-sm font-bold text-amber-900 dark:text-amber-200">
+                      <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <span>🎂 Your Custom Cake Quote Is Ready</span>
+                    </div>
+                    {selectedOrder.quote_issued_at && (
+                      <span className="text-xs text-amber-800/80 dark:text-amber-300/80 font-medium">
+                        Quote Issued: {formatDate(selectedOrder.quote_issued_at)}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                    {selectedOrder.customer_message ||
-                      selectedOrder.admin_notes ||
-                      "Your custom cake request has been reviewed by our bakery chef. Please review the instructions or confirm your order."}
-                  </p>
+
+                  {/* Financial Metric Cards Grid */}
+                  {selectedOrder.quoted_price_lkr !== null &&
+                    selectedOrder.quoted_price_lkr !== undefined && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                          <span className="text-[11px] font-medium text-muted-foreground block">
+                            Total Quote
+                          </span>
+                          <p className="text-lg font-bold text-foreground mt-0.5">
+                            {formatLKR(selectedOrder.quoted_price_lkr)}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                          <span className="text-[11px] font-medium text-muted-foreground block">
+                            Required Deposit
+                          </span>
+                          <p className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+                            {selectedOrder.deposit_amount_lkr &&
+                            selectedOrder.deposit_amount_lkr > 0
+                              ? formatLKR(selectedOrder.deposit_amount_lkr)
+                              : "No Deposit Required"}
+                          </p>
+                        </div>
+
+                        <div className="col-span-2 sm:col-span-1 rounded-2xl bg-card p-3.5 border border-amber-500/20 shadow-xs">
+                          <span className="text-[11px] font-medium text-muted-foreground block">
+                            Outstanding Balance
+                          </span>
+                          <p className="text-lg font-bold text-foreground mt-0.5">
+                            {formatLKR(
+                              Math.max(
+                                (selectedOrder.quoted_price_lkr ?? 0) -
+                                  (selectedOrder.amount_paid_lkr ?? 0),
+                                0,
+                              ),
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Payment Progress Bar */}
+                  {renderPaymentProgressBar(selectedOrder)}
+
+                  {/* Customer Message from SC FrostHeaven */}
+                  {Boolean(
+                    (selectedOrder.customer_message || selectedOrder.admin_notes || "").trim(),
+                  ) && (
+                    <div className="space-y-1.5 rounded-2xl bg-card/80 p-4 border border-amber-500/20 text-xs">
+                      <span className="font-semibold text-foreground flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5 text-primary" />
+                        Message from SC FrostHeaven
+                      </span>
+                      <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {selectedOrder.customer_message || selectedOrder.admin_notes}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Neutral Payment Instructions Note */}
+                  <div className="flex items-center gap-2 rounded-xl bg-card/50 px-3.5 py-2 border border-amber-500/15 text-xs text-muted-foreground">
+                    <Info className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Payment instructions will be provided by SC FrostHeaven.</span>
+                  </div>
 
                   {/* Accept quote action in modal */}
                   <div className="pt-2 flex flex-wrap items-center gap-2.5">
@@ -1199,10 +1546,10 @@ function AccountPage() {
                       onClick={() =>
                         setActionConfirmation({ type: "accept", order: selectedOrder })
                       }
-                      className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer font-semibold shadow-xs"
+                      className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer font-semibold shadow-xs"
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>Accept Quote &amp; Confirm Order</span>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Accept Quote</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -1210,22 +1557,163 @@ function AccountPage() {
                       onClick={() =>
                         setActionConfirmation({ type: "cancel", order: selectedOrder })
                       }
-                      className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
+                      className="rounded-full text-xs h-9 px-4 text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
                     >
                       <XCircle className="h-3.5 w-3.5 mr-1" />
-                      <span>Cancel Request</span>
+                      <span>Cancel Order</span>
                     </Button>
                   </div>
                 </div>
               )}
 
-              {/* Message from FrostHeaven when not quoted */}
+              {/* Structured Quotation & Payment Summary in Modal */}
+              <div className="space-y-4 rounded-2xl bg-card p-5 border border-border/80 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Receipt className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">
+                        Quotation &amp; Payment Summary
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Verified financial details and balance status
+                      </p>
+                    </div>
+                  </div>
+                  <div>{renderCustomerPaymentBadge(selectedOrder)}</div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {/* Total Quote */}
+                  <div className="rounded-2xl bg-secondary/30 p-3 border border-border/50">
+                    <span className="text-[11px] font-medium text-muted-foreground block">
+                      Total Quoted
+                    </span>
+                    <p className="text-base font-bold text-foreground mt-0.5">
+                      {selectedOrder.quoted_price_lkr !== null &&
+                      selectedOrder.quoted_price_lkr !== undefined
+                        ? formatLKR(selectedOrder.quoted_price_lkr)
+                        : "Not Quoted"}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {selectedOrder.quote_issued_at
+                        ? `Issued ${formatDate(selectedOrder.quote_issued_at)}`
+                        : "Awaiting quote"}
+                    </span>
+                  </div>
+
+                  {/* Required Deposit */}
+                  <div className="rounded-2xl bg-secondary/30 p-3 border border-border/50">
+                    <span className="text-[11px] font-medium text-muted-foreground block">
+                      Required Deposit
+                    </span>
+                    <p className="text-base font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+                      {selectedOrder.deposit_amount_lkr !== null &&
+                      selectedOrder.deposit_amount_lkr !== undefined
+                        ? selectedOrder.deposit_amount_lkr > 0
+                          ? formatLKR(selectedOrder.deposit_amount_lkr)
+                          : "No Deposit"
+                        : "—"}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {selectedOrder.deposit_amount_lkr && selectedOrder.deposit_amount_lkr > 0
+                        ? "Required to start baking"
+                        : "Full on completion"}
+                    </span>
+                  </div>
+
+                  {/* Amount Paid */}
+                  <div className="rounded-2xl bg-secondary/30 p-3 border border-border/50">
+                    <span className="text-[11px] font-medium text-muted-foreground block">
+                      Amount Paid
+                    </span>
+                    <p className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {formatLKR(selectedOrder.amount_paid_lkr ?? 0)}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {selectedOrder.deposit_paid_at
+                        ? `Deposit verified ${formatDate(selectedOrder.deposit_paid_at)}`
+                        : (selectedOrder.amount_paid_lkr ?? 0) > 0
+                          ? "Partial funds received"
+                          : "No funds received"}
+                    </span>
+                  </div>
+
+                  {/* Balance Due */}
+                  <div className="rounded-2xl bg-secondary/30 p-3 border border-border/50">
+                    <span className="text-[11px] font-medium text-muted-foreground block">
+                      Outstanding Balance
+                    </span>
+                    <p className="text-base font-bold text-foreground mt-0.5">
+                      {selectedOrder.quoted_price_lkr !== null &&
+                      selectedOrder.quoted_price_lkr !== undefined
+                        ? formatLKR(
+                            Math.max(
+                              (selectedOrder.quoted_price_lkr ?? 0) -
+                                (selectedOrder.amount_paid_lkr ?? 0),
+                              0,
+                            ),
+                          )
+                        : "—"}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground">
+                      {(selectedOrder.quoted_price_lkr ?? 0) > 0 &&
+                      (selectedOrder.quoted_price_lkr ?? 0) <= (selectedOrder.amount_paid_lkr ?? 0)
+                        ? "Fully settled"
+                        : selectedOrder.quoted_price_lkr !== null &&
+                            selectedOrder.quoted_price_lkr !== undefined
+                          ? "Remaining balance"
+                          : "Awaiting quote"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Progress & Payment Method Details (If Quoted) */}
+                {selectedOrder.quoted_price_lkr !== null &&
+                  selectedOrder.quoted_price_lkr !== undefined &&
+                  selectedOrder.quoted_price_lkr > 0 && (
+                    <>
+                      {renderPaymentProgressBar(selectedOrder)}
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
+                        <div className="flex items-center gap-2">
+                          <span>Payment Collection Method:</span>
+                          <span className="font-semibold text-foreground">
+                            {selectedOrder.payment_method
+                              ? PAYMENT_METHOD_LABELS[selectedOrder.payment_method] ||
+                                selectedOrder.payment_method
+                              : "Not recorded yet"}
+                          </span>
+                        </div>
+                        {selectedOrder.fully_paid_at && (
+                          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Fully paid on {formatDate(selectedOrder.fully_paid_at)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                {/* Neutral Payment Instructions Note */}
+                <div className="flex items-center gap-2 rounded-xl bg-secondary/40 px-3.5 py-2.5 border border-border/50 text-xs text-muted-foreground">
+                  <Info className="h-4 w-4 text-primary shrink-0" />
+                  <span>Payment instructions will be provided by SC FrostHeaven.</span>
+                </div>
+              </div>
+
+              {/* Message from FrostHeaven when not in quoted state */}
               {selectedOrder.status.toLowerCase() !== "quoted" &&
-                (selectedOrder.customer_message || selectedOrder.admin_notes) && (
+                Boolean(
+                  (selectedOrder.customer_message || selectedOrder.admin_notes || "").trim(),
+                ) && (
                   <div className="rounded-2xl bg-secondary/30 border border-border/60 p-4 sm:p-5 space-y-2">
                     <div className="flex items-center gap-2 text-xs font-semibold text-primary">
                       <Sparkles className="h-3.5 w-3.5" />
-                      <span>Message from FrostHeaven</span>
+                      <span>Message from SC FrostHeaven</span>
                     </div>
                     <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
                       {selectedOrder.customer_message || selectedOrder.admin_notes}
@@ -1290,7 +1778,7 @@ function AccountPage() {
               <div className="space-y-2">
                 <h4 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                   <FileText className="h-4 w-4 text-primary" />
-                  Cake Details & Instructions
+                  Cake Details &amp; Instructions
                 </h4>
                 <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
                   {selectedOrder.cake_details}
@@ -1301,7 +1789,7 @@ function AccountPage() {
               <div className="space-y-3">
                 <h4 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                   <ImageIcon className="h-4 w-4 text-primary" />
-                  Inspiration & Reference Photos ({orderImages.length})
+                  Inspiration &amp; Reference Photos ({orderImages.length})
                 </h4>
 
                 {loadingImages ? (
@@ -1383,26 +1871,61 @@ function AccountPage() {
           <div className="relative w-full max-w-md rounded-3xl bg-card p-6 shadow-2xl border border-border space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3">
               {actionConfirmation.type === "accept" ? (
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary flex-shrink-0 mt-0.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary shrink-0 mt-0.5">
                   <CheckCircle2 className="h-5 w-5" />
                 </div>
               ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-destructive/10 text-destructive flex-shrink-0 mt-0.5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-destructive/10 text-destructive shrink-0 mt-0.5">
                   <AlertCircle className="h-5 w-5" />
                 </div>
               )}
-              <div>
+              <div className="space-y-1">
                 <h3 className="text-base font-semibold text-foreground">
                   {actionConfirmation.type === "accept"
-                    ? "Confirm & Accept Quote?"
+                    ? "Accept this quotation?"
                     : "Cancel Custom Order Request?"}
                 </h3>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {actionConfirmation.type === "accept"
-                    ? "By confirming, you accept the bakery instructions and quote for this custom cake. Our pastry team will schedule baking for your event date."
+                    ? "By accepting, you confirm that you agree to the quoted price and the bakery can proceed with your order."
                     : "Are you sure you want to cancel this custom cake request? This action cannot be undone."}
                 </p>
               </div>
+            </div>
+
+            {/* Structured Summary in Confirmation Dialog */}
+            <div className="rounded-2xl bg-secondary/30 p-3.5 border border-border/60 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Celebration:</span>
+                <span className="font-semibold text-foreground">
+                  {actionConfirmation.order.event_type} Cake
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Event Date:</span>
+                <span className="font-medium text-foreground">
+                  {formatDate(actionConfirmation.order.event_date)}
+                </span>
+              </div>
+              {actionConfirmation.type === "accept" && (
+                <>
+                  <div className="flex items-center justify-between border-t border-border/40 pt-1.5">
+                    <span className="text-muted-foreground">Quoted Price:</span>
+                    <span className="font-bold text-foreground">
+                      {formatLKR(actionConfirmation.order.quoted_price_lkr)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Required Deposit:</span>
+                    <span className="font-bold text-amber-700 dark:text-amber-400">
+                      {actionConfirmation.order.deposit_amount_lkr &&
+                      actionConfirmation.order.deposit_amount_lkr > 0
+                        ? formatLKR(actionConfirmation.order.deposit_amount_lkr)
+                        : "No Deposit Required"}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/60">
@@ -1437,7 +1960,7 @@ function AccountPage() {
                     Processing...
                   </>
                 ) : actionConfirmation.type === "accept" ? (
-                  "Yes, Confirm Order"
+                  "Accept Quote"
                 ) : (
                   "Yes, Cancel Request"
                 )}

@@ -27,6 +27,7 @@ import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminInquiriesRouteImport } from './routes/admin.inquiries'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminReviewsRouteImport } from './routes/admin.reviews'
+import { Route as AdminSchedulingRouteImport } from './routes/admin.scheduling'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as ProductHandleRouteImport } from './routes/product.$handle'
 
@@ -120,6 +121,11 @@ const AdminReviewsRoute = AdminReviewsRouteImport.update({
   path: '/reviews',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSchedulingRoute = AdminSchedulingRouteImport.update({
+  id: '/scheduling',
+  path: '/scheduling',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/admin/inquiries': typeof AdminInquiriesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/reviews': typeof AdminReviewsRoute
+  '/admin/scheduling': typeof AdminSchedulingRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
   '/admin/': typeof AdminIndexRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/admin/inquiries': typeof AdminInquiriesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/reviews': typeof AdminReviewsRoute
+  '/admin/scheduling': typeof AdminSchedulingRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
   '/admin': typeof AdminIndexRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/admin/inquiries': typeof AdminInquiriesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/reviews': typeof AdminReviewsRoute
+  '/admin/scheduling': typeof AdminSchedulingRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/product/$handle': typeof ProductHandleRoute
   '/admin/': typeof AdminIndexRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/admin/inquiries'
     | '/admin/orders'
     | '/admin/reviews'
+    | '/admin/scheduling'
     | '/auth/callback'
     | '/product/$handle'
     | '/admin/'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/admin/inquiries'
     | '/admin/orders'
     | '/admin/reviews'
+    | '/admin/scheduling'
     | '/auth/callback'
     | '/product/$handle'
     | '/admin'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/admin/inquiries'
     | '/admin/orders'
     | '/admin/reviews'
+    | '/admin/scheduling'
     | '/auth/callback'
     | '/product/$handle'
     | '/admin/'
@@ -410,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminReviewsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/scheduling': {
+      id: '/admin/scheduling'
+      path: '/scheduling'
+      fullPath: '/admin/scheduling'
+      preLoaderRoute: typeof AdminSchedulingRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -433,6 +452,7 @@ interface AdminRouteChildren {
   AdminInquiriesRoute: typeof AdminInquiriesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminReviewsRoute: typeof AdminReviewsRoute
+  AdminSchedulingRoute: typeof AdminSchedulingRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -442,6 +462,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminInquiriesRoute: AdminInquiriesRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminReviewsRoute: AdminReviewsRoute,
+  AdminSchedulingRoute: AdminSchedulingRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

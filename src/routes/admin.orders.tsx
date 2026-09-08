@@ -38,6 +38,7 @@ import {
   Banknote,
   CreditCard,
   MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -52,6 +53,12 @@ import {
   getEmailMailtoUrl,
   type ReadinessInfo,
 } from "@/lib/order-readiness";
+import {
+  getStaffDisplayName,
+  previewStaffAssignmentImpact,
+  type StaffProfileInput,
+} from "@/lib/staff-workload-utils";
+import type { KitchenCapacitySetting, BakeryBlackoutDate } from "@/lib/capacity-utils";
 
 export const Route = createFileRoute("/admin/orders")({
   head: () => ({
@@ -86,6 +93,15 @@ interface CustomOrder {
   quote_issued_at?: string | null | undefined;
   deposit_paid_at?: string | null | undefined;
   fully_paid_at?: string | null | undefined;
+  scheduled_bake_date?: string | null | undefined;
+  scheduled_decorate_date?: string | null | undefined;
+  target_pickup_time?: string | null | undefined;
+  production_priority?: string | null | undefined;
+  complexity_units?: number | null | undefined;
+  assigned_baker_id?: string | null | undefined;
+  assigned_decorator_id?: string | null | undefined;
+  production_started_at?: string | null | undefined;
+  production_completed_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -183,6 +199,21 @@ function AdminOrdersPage() {
     "overview",
   );
 
+  // Staff Assignment State (Phase 7E)
+  const [staffList, setStaffList] = useState<StaffProfileInput[]>([]);
+  const [orderBakerId, setOrderBakerId] = useState<string>("");
+  const [orderDecoratorId, setOrderDecoratorId] = useState<string>("");
+  const [orderBakeDate, setOrderBakeDate] = useState<string>("");
+  const [orderDecorateDate, setOrderDecorateDate] = useState<string>("");
+  const [orderPickupTime, setOrderPickupTime] = useState<string>("");
+  const [orderPriority, setOrderPriority] = useState<string>("normal");
+  const [orderComplexity, setOrderComplexity] = useState<number>(1.0);
+  const [isSavingKitchenAssignment, setIsSavingKitchenAssignment] = useState(false);
+
+  // Kitchen Capacity & Blackout State (Phase 7F)
+  const [capacitySettings, setCapacitySettings] = useState<KitchenCapacitySetting[]>([]);
+  const [blackoutDates, setBlackoutDates] = useState<BakeryBlackoutDate[]>([]);
+
   // Kitchen Quick Actions & Ticket Printing state
   const [ticketOrder, setTicketOrder] = useState<CustomOrder | null>(null);
   const [ticketImages, setTicketImages] = useState<OrderImage[]>([]);
@@ -200,17 +231,18 @@ function AdminOrdersPage() {
     }
   }, [authLoading, user, profile, navigate]);
 
-  // 2. Fetch All Custom Orders from Supabase (Including Phase 6B Structured Financial Data)
+  // 2. Fetch All Custom Orders from Supabase (Including Phase 6B Structured Financial Data & Phase 7 Scheduling/Staff Data)
   const fetchOrders = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     else setLoadingOrders(true);
     setOrdersError(null);
 
     try {
+      // 1. Fetch custom orders
       const { data: initialData, error } = await supabase
         .from("custom_orders")
         .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, payment_reference, payment_notes, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
+          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, internal_notes, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, payment_reference, payment_notes, quote_issued_at, deposit_paid_at, fully_paid_at, scheduled_bake_date, scheduled_decorate_date, target_pickup_time, production_priority, complexity_units, assigned_baker_id, assigned_decorator_id, production_started_at, production_completed_at, created_at, updated_at",
         )
         .order("created_at", { ascending: false });
 
@@ -223,7 +255,7 @@ function AdminOrdersPage() {
           error.message?.includes("does not exist"))
       ) {
         console.warn(
-          "Structured payment columns not detected on custom_orders. Falling back to base columns.",
+          "Structured payment/scheduling columns not detected on custom_orders. Falling back to base columns.",
         );
         const fallbackRes = await supabase
           .from("custom_orders")
@@ -238,6 +270,36 @@ function AdminOrdersPage() {
       }
 
       setOrders(data || []);
+
+      // 2. Fetch admin profiles for staff assignment candidates
+      const { data: profsData, error: profsError } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, role")
+        .eq("role", "admin");
+
+      if (!profsError && profsData) {
+        setStaffList(profsData as StaffProfileInput[]);
+      }
+
+      // 3. Fetch kitchen capacity settings
+      const { data: capData, error: capError } = await supabase
+        .from("kitchen_capacity_settings")
+        .select("id, day_of_week, max_capacity_units, updated_at")
+        .order("day_of_week", { ascending: true });
+
+      if (!capError && capData) {
+        setCapacitySettings(capData as KitchenCapacitySetting[]);
+      }
+
+      // 4. Fetch bakery blackout dates
+      const { data: blackoutData, error: blackoutError } = await supabase
+        .from("bakery_blackout_dates")
+        .select("id, blackout_date, reason, created_at")
+        .order("blackout_date", { ascending: true });
+
+      if (!blackoutError && blackoutData) {
+        setBlackoutDates(blackoutData as BakeryBlackoutDate[]);
+      }
 
       if (isManualRefresh) {
         toast.success("Custom orders refreshed.");
@@ -395,6 +457,19 @@ function AdminOrdersPage() {
     setPaymentReferenceInput(order.payment_reference || "");
     setPaymentNotesInput(order.payment_notes || "");
     setFinancialSectionTab("overview");
+
+    // Initialize Kitchen & Staff Assignment state
+    setOrderBakerId(order.assigned_baker_id || "");
+    setOrderDecoratorId(order.assigned_decorator_id || "");
+    setOrderBakeDate(order.scheduled_bake_date || "");
+    setOrderDecorateDate(order.scheduled_decorate_date || "");
+    setOrderPickupTime(order.target_pickup_time ? order.target_pickup_time.slice(0, 5) : "");
+    setOrderPriority(order.production_priority || "normal");
+    setOrderComplexity(
+      order.complexity_units !== undefined && order.complexity_units !== null
+        ? Number(order.complexity_units)
+        : 1.0,
+    );
 
     try {
       if (order.customer_id) {
@@ -778,6 +853,58 @@ function AdminOrdersPage() {
     }
   };
 
+  // 11b. Save Kitchen Scheduling & Staff Assignment (Phase 7E)
+  const handleSaveKitchenAssignment = async () => {
+    if (!selectedOrder || isSavingKitchenAssignment) return;
+
+    if (orderBakeDate && orderDecorateDate && orderDecorateDate < orderBakeDate) {
+      toast.error("Invalid Schedule: Decorate date cannot be earlier than the bake date.");
+      return;
+    }
+
+    const complexityNum = Number(orderComplexity);
+    if (isNaN(complexityNum) || complexityNum < 0.5 || complexityNum > 10.0) {
+      toast.error("Invalid Complexity: Workload units must be between 0.5 and 10.0.");
+      return;
+    }
+
+    try {
+      setIsSavingKitchenAssignment(true);
+      const nowIso = new Date().toISOString();
+      const updatePayload: Record<string, unknown> = {
+        scheduled_bake_date: orderBakeDate.trim() ? orderBakeDate.trim() : null,
+        scheduled_decorate_date: orderDecorateDate.trim() ? orderDecorateDate.trim() : null,
+        target_pickup_time: orderPickupTime.trim() ? `${orderPickupTime.trim()}:00` : null,
+        production_priority: orderPriority.toLowerCase(),
+        complexity_units: complexityNum,
+        assigned_baker_id: orderBakerId.trim() ? orderBakerId.trim() : null,
+        assigned_decorator_id: orderDecoratorId.trim() ? orderDecoratorId.trim() : null,
+        updated_at: nowIso,
+      };
+
+      const { error } = await supabase
+        .from("custom_orders")
+        .update(updatePayload)
+        .eq("id", selectedOrder.id);
+
+      if (error) throw error;
+
+      const updatedOrder: CustomOrder = {
+        ...selectedOrder,
+        ...updatePayload,
+      };
+
+      setSelectedOrder(updatedOrder);
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? updatedOrder : o)));
+      toast.success("Kitchen scheduling & staff assignments saved.");
+    } catch (err: unknown) {
+      console.error("Failed to save kitchen assignment:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to save kitchen assignment.");
+    } finally {
+      setIsSavingKitchenAssignment(false);
+    }
+  };
+
   // 12. Open Kitchen Ticket for Printing
   const handleOpenTicket = async (order: CustomOrder) => {
     setTicketOrder(order);
@@ -1128,6 +1255,10 @@ function AdminOrdersPage() {
           onOpenOrder={handleOpenOrderDetails}
           onPrintTicket={handleOpenTicket}
           updatingOrderId={updatingKitchenOrderId}
+          staffList={staffList}
+          currentUserId={user?.id}
+          capacitySettings={capacitySettings}
+          blackoutDates={blackoutDates}
         />
       )}
 
@@ -2277,6 +2408,240 @@ function AdminOrdersPage() {
                 )}
               </div>
 
+              {/* 4c. KITCHEN SCHEDULING & STAFF ASSIGNMENT (Phase 7E) */}
+              <div className="space-y-4 rounded-3xl bg-secondary/15 p-5 border border-border/80 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-purple-500/10 text-purple-700">
+                      <ChefHat className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Kitchen Scheduling & Staff Assignment
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Assign Baker & Decorator, schedule bake/decorate dates, and set workload units
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveKitchenAssignment}
+                      disabled={isSavingKitchenAssignment}
+                      className="rounded-full bg-primary text-primary-foreground text-xs cursor-pointer shadow-xs font-semibold"
+                    >
+                      {isSavingKitchenAssignment ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save Kitchen Details"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Assigned Baker */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-purple-600" />
+                      Assigned Baker
+                    </label>
+                    <select
+                      value={orderBakerId}
+                      onChange={(e) => setOrderBakerId(e.target.value)}
+                      className="w-full rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium text-foreground focus:outline-none"
+                    >
+                      <option value="">Unassigned</option>
+                      {staffList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {getStaffDisplayName(s)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Assigned Decorator */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-pink-600" />
+                      Assigned Decorator
+                    </label>
+                    <select
+                      value={orderDecoratorId}
+                      onChange={(e) => setOrderDecoratorId(e.target.value)}
+                      className="w-full rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium text-foreground focus:outline-none"
+                    >
+                      <option value="">Unassigned</option>
+                      {staffList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {getStaffDisplayName(s)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Scheduled Bake Date */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                      <span>Scheduled Bake Date</span>
+                      {orderBakeDate && (
+                        <button
+                          type="button"
+                          onClick={() => setOrderBakeDate("")}
+                          className="text-[10px] text-muted-foreground hover:text-rose-500 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </label>
+                    <Input
+                      type="date"
+                      value={orderBakeDate}
+                      onChange={(e) => setOrderBakeDate(e.target.value)}
+                      className="rounded-xl bg-card border-border/70 text-xs"
+                    />
+                  </div>
+
+                  {/* Scheduled Decorate Date */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                      <span>Scheduled Decorate Date</span>
+                      {orderDecorateDate && (
+                        <button
+                          type="button"
+                          onClick={() => setOrderDecorateDate("")}
+                          className="text-[10px] text-muted-foreground hover:text-rose-500 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </label>
+                    <Input
+                      type="date"
+                      value={orderDecorateDate}
+                      onChange={(e) => setOrderDecorateDate(e.target.value)}
+                      className="rounded-xl bg-card border-border/70 text-xs"
+                    />
+                  </div>
+
+                  {/* Target Pickup Time */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                      <span>Target Pickup Time</span>
+                      {orderPickupTime && (
+                        <button
+                          type="button"
+                          onClick={() => setOrderPickupTime("")}
+                          className="text-[10px] text-muted-foreground hover:text-rose-500 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </label>
+                    <Input
+                      type="time"
+                      value={orderPickupTime}
+                      onChange={(e) => setOrderPickupTime(e.target.value)}
+                      className="rounded-xl bg-card border-border/70 text-xs"
+                    />
+                  </div>
+
+                  {/* Production Priority */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground">
+                      Production Priority
+                    </label>
+                    <select
+                      value={orderPriority}
+                      onChange={(e) => setOrderPriority(e.target.value)}
+                      className="w-full rounded-xl border border-border/70 bg-card px-3 py-2 text-xs font-medium text-foreground focus:outline-none"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Complexity Units Slider */}
+                <div className="space-y-2 rounded-2xl bg-card p-3.5 border border-border/70">
+                  <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                    <span>Complexity / Workload Units:</span>
+                    <span className="text-primary font-bold">{Number(orderComplexity).toFixed(1)} Units</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="10.0"
+                    step="0.5"
+                    value={orderComplexity}
+                    onChange={(e) => setOrderComplexity(parseFloat(e.target.value))}
+                    className="w-full accent-primary cursor-pointer"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <button type="button" onClick={() => setOrderComplexity(1.0)} className="hover:text-primary cursor-pointer">1.0u (Standard)</button>
+                    <button type="button" onClick={() => setOrderComplexity(2.0)} className="hover:text-primary cursor-pointer">2.0u (2-Tier)</button>
+                    <button type="button" onClick={() => setOrderComplexity(4.0)} className="hover:text-primary cursor-pointer">4.0u (3+ Tiers)</button>
+                  </div>
+                </div>
+
+                {/* Live Preview Notices */}
+                {(() => {
+                  if (!selectedOrder) return null;
+                  const bakerStaff = staffList.find((s) => s.id === orderBakerId);
+                  const decoratorStaff = staffList.find((s) => s.id === orderDecoratorId);
+
+                  const bakerPreview = orderBakerId && orderBakeDate && bakerStaff
+                    ? previewStaffAssignmentImpact(
+                        orderBakeDate,
+                        orderBakerId,
+                        getStaffDisplayName(bakerStaff),
+                        selectedOrder.id,
+                        orderComplexity,
+                        "baker",
+                        orders as any
+                      )
+                    : null;
+
+                  const decoratorPreview = orderDecoratorId && orderDecorateDate && decoratorStaff
+                    ? previewStaffAssignmentImpact(
+                        orderDecorateDate,
+                        orderDecoratorId,
+                        getStaffDisplayName(decoratorStaff),
+                        selectedOrder.id,
+                        orderComplexity,
+                        "decorator",
+                        orders as any
+                      )
+                    : null;
+
+                  if (!bakerPreview?.warningMessage && !decoratorPreview?.warningMessage) return null;
+
+                  return (
+                    <div className="space-y-2 pt-1">
+                      {bakerPreview?.warningMessage && (
+                        <div className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${bakerPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}>
+                          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
+                          <span><strong>Baker:</strong> {bakerPreview.warningMessage}</span>
+                        </div>
+                      )}
+                      {decoratorPreview?.warningMessage && (
+                        <div className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${decoratorPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}>
+                          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
+                          <span><strong>Decorator:</strong> {decoratorPreview.warningMessage}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Customer Message & Internal Bakery Notes Dual Editor */}
               <div className="space-y-4">
                 {/* Customer Facing Message */}
@@ -2449,6 +2814,16 @@ function AdminOrdersPage() {
         <KitchenProductionTicket
           order={ticketOrder}
           images={ticketImages}
+          bakerName={
+            staffList.find((s) => s.id === ticketOrder.assigned_baker_id)
+              ? getStaffDisplayName(staffList.find((s) => s.id === ticketOrder.assigned_baker_id))
+              : undefined
+          }
+          decoratorName={
+            staffList.find((s) => s.id === ticketOrder.assigned_decorator_id)
+              ? getStaffDisplayName(staffList.find((s) => s.id === ticketOrder.assigned_decorator_id))
+              : undefined
+          }
           onClose={() => setTicketOrder(null)}
         />
       )}

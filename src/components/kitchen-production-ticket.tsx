@@ -14,8 +14,13 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  ChefHat,
+  Sparkles,
+  Flame,
+  Timer,
 } from "lucide-react";
 import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
+import { formatProductionDuration } from "@/lib/kitchen-operations-utils";
 
 export interface TicketOrder {
   id: string;
@@ -38,6 +43,15 @@ export interface TicketOrder {
   quote_issued_at?: string | null | undefined;
   deposit_paid_at?: string | null | undefined;
   fully_paid_at?: string | null | undefined;
+  scheduled_bake_date?: string | null | undefined;
+  scheduled_decorate_date?: string | null | undefined;
+  target_pickup_time?: string | null | undefined;
+  production_priority?: string | null | undefined;
+  complexity_units?: number | null | undefined;
+  assigned_baker_id?: string | null | undefined;
+  assigned_decorator_id?: string | null | undefined;
+  production_started_at?: string | null | undefined;
+  production_completed_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -52,18 +66,27 @@ export interface TicketImage {
 
 interface KitchenProductionTicketProps {
   order: TicketOrder;
-  images?: TicketImage[];
+  images?: TicketImage[] | undefined;
+  bakerName?: string | undefined;
+  decoratorName?: string | undefined;
   onClose: () => void;
 }
 
 export function KitchenProductionTicket({
   order,
   images = [],
+  bakerName,
+  decoratorName,
   onClose,
 }: KitchenProductionTicketProps) {
   const shortId = order.id.slice(0, 8).toUpperCase();
   const readiness = getProductionReadiness(order);
   const paymentInfo = getPaymentBadgeInfo(order);
+  const durationInfo = formatProductionDuration(
+    order.production_started_at,
+    order.production_completed_at,
+    Date.now()
+  );
 
   const quoted = Number(order.quoted_price_lkr || 0);
   const deposit = Number(order.deposit_amount_lkr || 0);
@@ -77,7 +100,11 @@ export function KitchenProductionTicket({
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "N/A";
     try {
-      const date = new Date(dateStr);
+      const parts = dateStr.split("-");
+      const year = parseInt(parts[0] || "2026", 10);
+      const month = parseInt(parts[1] || "1", 10) - 1;
+      const day = parseInt(parts[2] || "1", 10);
+      const date = new Date(year, month, day, 12, 0, 0);
       return new Intl.DateTimeFormat("en-US", {
         weekday: "short",
         month: "short",
@@ -90,21 +117,22 @@ export function KitchenProductionTicket({
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto">
-      {/* Container - on screen modal, on print takes full page */}
-      <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-2xl border border-border overflow-hidden print:max-h-none print:w-full print:border-none print:shadow-none print:rounded-none print:p-0">
-        {/* Screen-only Action Toolbar */}
-        <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/40 print:hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto print:p-0 print:bg-white print:static">
+      <div className="relative flex max-h-[92vh] w-full max-w-3xl flex-col rounded-3xl bg-card shadow-2xl border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200 print:shadow-none print:border-none print:max-h-none print:w-full print:rounded-none">
+        {/* Ticket Controls Header (Screen only) */}
+        <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/40 sticky top-0 z-20 backdrop-blur-xs print:hidden">
           <div className="flex items-center gap-2">
-            <Printer className="h-5 w-5 text-primary" />
-            <h3 className="text-base font-semibold text-foreground">
-              Kitchen Production Ticket — #{shortId}
-            </h3>
+            <span className="font-mono text-xs font-bold text-muted-foreground uppercase">
+              Production Ticket:
+            </span>
+            <span className="font-mono text-sm font-bold text-foreground">#{shortId}</span>
           </div>
+
           <div className="flex items-center gap-2">
             <Button
               onClick={handlePrint}
-              className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 px-4 h-9 text-xs cursor-pointer shadow-xs"
+              size="sm"
+              className="rounded-full gap-1.5 bg-primary text-primary-foreground shadow-xs cursor-pointer hover:bg-primary/90"
             >
               <Printer className="h-4 w-4" />
               <span>Print Ticket</span>
@@ -136,7 +164,7 @@ export function KitchenProductionTicket({
                 SC FrostHeaven Bakery
               </h1>
               <p className="text-xs text-muted-foreground print:text-black/80">
-                Artisan Handcrafted Cakes & Desserts
+                Artisan Handcrafted Cakes & Custom Pastry
               </p>
             </div>
             <div className="text-right space-y-1">
@@ -150,8 +178,8 @@ export function KitchenProductionTicket({
             </div>
           </div>
 
-          {/* Critical Target Date & Event Banner */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 rounded-2xl bg-secondary/30 print:bg-neutral-100 p-4 border border-border/80 print:border-black">
+          {/* Critical Target Date, Priority & Readiness Banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 rounded-2xl bg-secondary/30 print:bg-neutral-100 p-4 border border-border/80 print:border-black">
             <div>
               <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground print:text-black">
                 Target Event Date
@@ -164,16 +192,25 @@ export function KitchenProductionTicket({
 
             <div>
               <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground print:text-black">
-                Celebration Type
+                Celebration
               </span>
-              <p className="text-base sm:text-lg font-bold text-foreground print:text-black mt-0.5">
+              <p className="text-base font-bold text-foreground print:text-black mt-0.5">
                 {order.event_type}
               </p>
             </div>
 
-            <div className="col-span-2 sm:col-span-1">
+            <div>
               <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground print:text-black">
-                Production Readiness
+                Priority
+              </span>
+              <p className="text-base font-bold text-foreground print:text-black mt-0.5 uppercase">
+                {order.production_priority || "NORMAL"}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground print:text-black">
+                Readiness
               </span>
               <p className="text-base font-bold text-foreground print:text-black uppercase mt-0.5">
                 {readiness.label}
@@ -181,7 +218,41 @@ export function KitchenProductionTicket({
             </div>
           </div>
 
-          {/* Financial Clearance & Readiness Box for Kitchen Team */}
+          {/* Kitchen Schedule & Workload Box */}
+          <div className="rounded-2xl border border-black/60 print:border-black p-4 bg-muted/10 print:bg-white space-y-2">
+            <h4 className="text-xs uppercase tracking-wider font-bold text-foreground print:text-black flex items-center gap-1.5 border-b border-border/60 print:border-black/30 pb-2">
+              <ChefHat className="h-3.5 w-3.5 text-primary print:text-black" />
+              Kitchen Schedule & Workstation Metadata
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-muted-foreground print:text-black font-medium">Bake Date:</span>
+                <p className="font-bold text-foreground print:text-black">
+                  {order.scheduled_bake_date ? formatDate(order.scheduled_bake_date) : "Unscheduled"}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted-foreground print:text-black font-medium">Decorate Date:</span>
+                <p className="font-bold text-foreground print:text-black">
+                  {order.scheduled_decorate_date ? formatDate(order.scheduled_decorate_date) : "Unscheduled"}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted-foreground print:text-black font-medium">Target Pickup:</span>
+                <p className="font-bold text-foreground print:text-black font-mono">
+                  {order.target_pickup_time ? order.target_pickup_time.slice(0, 5) : "Not Specified"}
+                </p>
+              </div>
+              <div>
+                <span className="text-muted-foreground print:text-black font-medium">Complexity:</span>
+                <p className="font-bold text-foreground print:text-black">
+                  ⚡ {Number(order.complexity_units || 1.0).toFixed(1)} units
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Clearance Box for Kitchen Team */}
           <div className="rounded-2xl border-2 border-black/60 print:border-black p-4 bg-muted/20 print:bg-white space-y-2">
             <div className="flex items-center justify-between border-b border-border/60 print:border-black/40 pb-2">
               <h4 className="text-xs uppercase tracking-wider font-bold text-foreground print:text-black flex items-center gap-1.5">
@@ -237,7 +308,7 @@ export function KitchenProductionTicket({
               </div>
               <div>
                 <span className="text-muted-foreground print:text-black">Phone:</span>
-                <p className="font-semibold text-foreground print:text-black">
+                <p className="font-semibold text-foreground print:text-black font-mono">
                   {order.customer_phone || "Not provided"}
                 </p>
               </div>
@@ -261,7 +332,7 @@ export function KitchenProductionTicket({
             </div>
           </div>
 
-          {/* Kitchen / Bakery Notes */}
+          {/* Kitchen Notes */}
           {(order.internal_notes || order.admin_notes) && (
             <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 print:bg-neutral-50 print:border-black p-4 space-y-1.5">
               <h4 className="text-xs uppercase tracking-wider font-bold text-amber-900 dark:text-amber-300 print:text-black flex items-center gap-1.5">
@@ -304,24 +375,45 @@ export function KitchenProductionTicket({
             </div>
           )}
 
+          {/* Production Timestamps Info (if started) */}
+          {durationInfo.hasStarted && (
+            <div className="rounded-2xl border border-black/40 p-3 text-xs flex justify-between items-center text-muted-foreground print:text-black">
+              <span>Baking Started: {durationInfo.formattedStartTime}</span>
+              <span>
+                {durationInfo.hasCompleted
+                  ? `Completed: ${durationInfo.formattedCompletedTime} (Duration: ${durationInfo.formattedDuration})`
+                  : `Elapsed Duration: ${durationInfo.formattedDuration}`}
+              </span>
+            </div>
+          )}
+
           {/* Kitchen Sign-off Footer */}
           <div className="pt-6 border-t-2 border-dashed border-black/50 grid grid-cols-3 gap-4 text-xs">
             <div>
               <span className="text-muted-foreground print:text-black font-semibold">
                 Baker Sign-off:
               </span>
+              <p className="text-[11px] font-medium text-foreground print:text-black mt-0.5">
+                {bakerName ? `Assigned: ${bakerName}` : "Unassigned"}
+              </p>
               <div className="mt-4 border-b border-black w-32" />
             </div>
             <div>
               <span className="text-muted-foreground print:text-black font-semibold">
                 Decorator Sign-off:
               </span>
+              <p className="text-[11px] font-medium text-foreground print:text-black mt-0.5">
+                {decoratorName ? `Assigned: ${decoratorName}` : "Unassigned"}
+              </p>
               <div className="mt-4 border-b border-black w-32" />
             </div>
             <div>
               <span className="text-muted-foreground print:text-black font-semibold">
                 Ready for Dispatch:
               </span>
+              <p className="text-[11px] font-medium text-foreground print:text-black mt-0.5">
+                Final Inspection & Packaging
+              </p>
               <div className="mt-4 border-b border-black w-32" />
             </div>
           </div>

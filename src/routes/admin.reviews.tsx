@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { exportToCsv } from "@/lib/csv-export";
+import { exportToCsv, getLocalDateString } from "@/lib/csv-export";
 
 export const Route = createFileRoute("/admin/reviews")({
   head: () => ({
@@ -271,7 +271,7 @@ function AdminReviewsPage() {
       r.is_approved ? "Yes" : "No",
       r.created_at,
     ]);
-    const dateStamp = new Date().toISOString().split("T")[0];
+    const dateStamp = getLocalDateString();
     exportToCsv(`reviews-${dateStamp}.csv`, headers, rows);
     toast.success("Reviews exported to CSV.");
   };

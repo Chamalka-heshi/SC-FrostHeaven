@@ -26,6 +26,11 @@ import {
   DollarSign,
   BadgePercent,
   AlertTriangle,
+  Flame,
+  Printer,
+  ShieldCheck,
+  PackageCheck,
+  Timer,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -43,8 +48,28 @@ import {
 } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { exportToCsv } from "@/lib/csv-export";
+import { exportToCsv, getLocalDateString } from "@/lib/csv-export";
 import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
+import {
+  calculateDailyCapacity,
+  type KitchenCapacitySetting,
+  type BakeryBlackoutDate,
+} from "@/lib/capacity-utils";
+import {
+  getStaffDisplayName,
+  getStaffWorkloadSummary,
+  type StaffProfileInput,
+} from "@/lib/staff-workload-utils";
+import {
+  calculateAverageProductionDuration,
+  calculateProductionCompletionRate,
+  calculateKitchenOperationsKPIs,
+  calculate14DayWorkloadCapacityForecast,
+  generateCapacityReportCsvRows,
+  generateStaffWorkloadReportCsvRows,
+  type DailyWorkloadForecastItem,
+} from "@/lib/analytics-utils";
+import { DailyManagementSummaryModal } from "@/components/daily-management-summary-modal";
 
 export const Route = createFileRoute("/admin/analytics")({
   head: () => ({
@@ -79,6 +104,15 @@ interface CustomOrder {
   quote_issued_at?: string | null | undefined;
   deposit_paid_at?: string | null | undefined;
   fully_paid_at?: string | null | undefined;
+  scheduled_bake_date?: string | null | undefined;
+  scheduled_decorate_date?: string | null | undefined;
+  target_pickup_time?: string | null | undefined;
+  production_priority?: string | null | undefined;
+  complexity_units?: number | null | undefined;
+  assigned_baker_id?: string | null | undefined;
+  assigned_decorator_id?: string | null | undefined;
+  production_started_at?: string | null | undefined;
+  production_completed_at?: string | null | undefined;
   created_at: string;
   updated_at?: string | undefined;
 }
@@ -144,6 +178,9 @@ function AdminAnalyticsPage() {
 
   const [orders, setOrders] = useState<CustomOrder[]>([]);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
+  const [staff, setStaff] = useState<StaffProfileInput[]>([]);
+  const [capacitySettings, setCapacitySettings] = useState<KitchenCapacitySetting[]>([]);
+  const [blackoutDates, setBlackoutDates] = useState<BakeryBlackoutDate[]>([]);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [inquiries, setInquiries] = useState<ContactInquiry[]>([]);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
@@ -151,6 +188,7 @@ function AdminAnalyticsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [showDailyManagementModal, setShowDailyManagementModal] = useState(false);
 
   // 1. Strict Administrator Authorization Guard
   useEffect(() => {
@@ -171,55 +209,57 @@ function AdminAnalyticsPage() {
     setErrorMessage(null);
 
     try {
-      let ordersPromise = supabase
-        .from("custom_orders")
-        .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
-        )
-        .order("created_at", { ascending: true });
-
-      const [initialOrdersRes, profilesRes, reviewsRes, inquiriesRes, notificationsRes] =
-        await Promise.all([
-          ordersPromise,
-          supabase
-            .from("profiles")
-            .select("id, full_name, email, phone, city, role, created_at")
-            .eq("role", "customer"),
-          supabase
-            .from("reviews")
-            .select("id, customer_name, rating, occasion, is_approved, created_at"),
-          supabase
-            .from("contact_inquiries")
-            .select("id, name, email, phone, message, status, created_at"),
-          supabase.from("notifications").select("id, user_id, type, title, is_read, created_at"),
-        ]);
-
-      let ordersData = initialOrdersRes.data as CustomOrder[] | null;
-      if (
-        initialOrdersRes.error &&
-        (initialOrdersRes.error.code === "42703" ||
-          initialOrdersRes.error.message?.includes("quoted_price_lkr") ||
-          initialOrdersRes.error.message?.includes("does not exist"))
-      ) {
-        console.warn("Structured payment columns not detected. Falling back to base custom_orders columns.");
-        const fallbackRes = await supabase
+      const [
+        ordersRes,
+        customersRes,
+        staffRes,
+        capacityRes,
+        blackoutRes,
+        reviewsRes,
+        inquiriesRes,
+        notificationsRes,
+      ] = await Promise.all([
+        supabase
           .from("custom_orders")
           .select(
-            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, created_at, updated_at",
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, scheduled_bake_date, scheduled_decorate_date, target_pickup_time, production_priority, complexity_units, assigned_baker_id, assigned_decorator_id, production_started_at, production_completed_at, created_at, updated_at",
           )
-          .order("created_at", { ascending: true });
-        if (fallbackRes.error) throw fallbackRes.error;
-        ordersData = fallbackRes.data as CustomOrder[] | null;
-      } else if (initialOrdersRes.error) {
-        throw initialOrdersRes.error;
-      }
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, phone, city, role, created_at")
+          .eq("role", "customer"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, role")
+          .eq("role", "admin"),
+        supabase
+          .from("kitchen_capacity_settings")
+          .select("id, day_of_week, max_capacity_units")
+          .order("day_of_week", { ascending: true }),
+        supabase
+          .from("bakery_blackout_dates")
+          .select("id, blackout_date, reason")
+          .order("blackout_date", { ascending: true }),
+        supabase
+          .from("reviews")
+          .select("id, customer_name, rating, occasion, is_approved, created_at"),
+        supabase
+          .from("contact_inquiries")
+          .select("id, name, email, phone, message, status, created_at"),
+        supabase.from("notifications").select("id, user_id, type, title, is_read, created_at"),
+      ]);
 
-      if (profilesRes.error) throw profilesRes.error;
+      if (ordersRes.error) throw ordersRes.error;
+      if (customersRes.error) throw customersRes.error;
       if (reviewsRes.error) throw reviewsRes.error;
       if (inquiriesRes.error) throw inquiriesRes.error;
 
-      setOrders(ordersData || []);
-      setCustomers((profilesRes.data as CustomerProfile[]) || []);
+      setOrders((ordersRes.data as CustomOrder[]) || []);
+      setCustomers((customersRes.data as CustomerProfile[]) || []);
+      setStaff((staffRes.data as StaffProfileInput[]) || []);
+      setCapacitySettings((capacityRes.data as KitchenCapacitySetting[]) || []);
+      setBlackoutDates((blackoutRes.data as BakeryBlackoutDate[]) || []);
       setReviews((reviewsRes.data as ReviewItem[]) || []);
       setInquiries((inquiriesRes.data as ContactInquiry[]) || []);
       setNotifications((notificationsRes.data as InAppNotification[]) || []);
@@ -244,7 +284,9 @@ function AdminAnalyticsPage() {
     }
   }, [profile, fetchAnalyticsData]);
 
-  // 3. Multi-Domain KPI Calculations (Operational & Financial)
+  const todayStr = useMemo(() => getLocalDateString(new Date()), []);
+
+  // 3. Multi-Domain Financial & General KPIs
   const kpis = useMemo(() => {
     const totalOrders = orders.length;
     const activeOrders = orders.filter((o) =>
@@ -350,7 +392,27 @@ function AdminAnalyticsPage() {
     };
   }, [orders, customers, reviews, inquiries, notifications]);
 
-  // 4A. Monthly Custom Order Volume (created_at = submission date)
+  // 4. Kitchen Operations & Throughput KPIs (Phase 7G Enhancement)
+  const kitchenKPIs = useMemo(() => {
+    return calculateKitchenOperationsKPIs(orders, todayStr, blackoutDates);
+  }, [orders, todayStr, blackoutDates]);
+
+  // 5. 14-Day Kitchen Workload vs Capacity Horizon Forecast
+  const forecast14Days: DailyWorkloadForecastItem[] = useMemo(() => {
+    return calculate14DayWorkloadCapacityForecast(
+      orders,
+      capacitySettings,
+      blackoutDates,
+      todayStr
+    );
+  }, [orders, capacitySettings, blackoutDates, todayStr]);
+
+  // 6. Staff Workload Summary (Today)
+  const staffSummary = useMemo(() => {
+    return getStaffWorkloadSummary(todayStr, staff, orders);
+  }, [todayStr, staff, orders]);
+
+  // 7. Monthly Custom Order Volume (created_at)
   const monthlyVolumeData = useMemo(() => {
     if (orders.length === 0) return [];
 
@@ -373,7 +435,7 @@ function AdminAnalyticsPage() {
     });
 
     const sorted = Array.from(monthMap.values()).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-    return sorted.slice(-6); // Last 6 historical months available
+    return sorted.slice(-6); // Last 6 historical months
   }, [orders]);
 
   const peakMonthLabel = useMemo(() => {
@@ -388,7 +450,7 @@ function AdminAnalyticsPage() {
     return top.label;
   }, [monthlyVolumeData]);
 
-  // 4B. Event Type Distribution (Donut Chart)
+  // 8. Event Type Distribution
   const eventTypeData = useMemo(() => {
     if (orders.length === 0) return [];
 
@@ -409,7 +471,7 @@ function AdminAnalyticsPage() {
       .sort((a, b) => b.value - a.value);
   }, [orders]);
 
-  // 4C. Status Funnel & Pipeline Distribution
+  // 9. Status Funnel & Pipeline Distribution
   const statusPipelineData = useMemo(() => {
     const total = orders.length;
     const statusOrder = [
@@ -441,55 +503,7 @@ function AdminAnalyticsPage() {
     });
   }, [orders]);
 
-  // 4D. 14-Day Kitchen Production Workload Forecast (event_date)
-  const upcomingWorkloadData = useMemo(() => {
-    const result: Array<{
-      dateStr: string;
-      label: string;
-      activeOrders: number;
-      isBusy: boolean;
-      ordersList: CustomOrder[];
-    }> = [];
-
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    for (let i = 0; i < 14; i++) {
-      const targetDate = new Date(now);
-      targetDate.setDate(now.getDate() + i);
-      const dateStr = targetDate.toISOString().split("T")[0] || "";
-
-      // Formatted label (e.g. "Mon 5th", "Today", "Tomorrow")
-      let label = targetDate.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "numeric",
-        day: "numeric",
-      });
-      if (i === 0) label = "Today";
-      else if (i === 1) label = "Tomorrow";
-
-      // Active orders for this event date
-      const activeForDate = orders.filter((o) => {
-        if (!o.event_date) return false;
-        const statusLower = o.status.toLowerCase();
-        if (TERMINAL_STATUSES.includes(statusLower)) return false;
-        return o.event_date === dateStr;
-      });
-
-      const count = activeForDate.length;
-      result.push({
-        dateStr,
-        label,
-        activeOrders: count,
-        isBusy: count >= 2,
-        ordersList: activeForDate,
-      });
-    }
-
-    return result;
-  }, [orders]);
-
-  // 4E. Payment Status Distribution (Donut / Bar)
+  // 10. Payment Status Distribution
   const paymentStatusData = useMemo(() => {
     const total = orders.length;
     const counts = { fully_paid: 0, deposit_paid: 0, unpaid: 0 };
@@ -526,7 +540,7 @@ function AdminAnalyticsPage() {
     ];
   }, [orders]);
 
-  // 4F. Production Readiness Distribution Pipeline
+  // 11. Production Readiness Distribution Pipeline
   const readinessPipelineData = useMemo(() => {
     const map: Record<string, { label: string; count: number; color: string }> = {
       awaiting_quote: { label: "Awaiting Quote", count: 0, color: "#f59e0b" },
@@ -556,67 +570,88 @@ function AdminAnalyticsPage() {
     }));
   }, [orders]);
 
-  // 5. Export Master Analytics Summary CSV (Including Phase 6B/6E Financials)
+  // ============================================================================
+  // CSV EXPORTS (RFC-4180 with local date filenames)
+  // ============================================================================
+
+  // CSV 1: Master Analytics Summary CSV
   const handleExportAnalyticsSummary = () => {
-    const todayStr = new Date().toISOString().split("T")[0] || "";
     const headers = ["Metric Category", "Metric Name", "Metric Value", "Calculation Details"];
     const rows: (string | number)[][] = [
-      ["Financials", "Total Funds Collected", formatLKR(kpis.totalCollectedLkr), "Verified customer payments recorded"],
-      ["Financials", "Total Quoted Pipeline", formatLKR(kpis.totalQuotedLkr), "Cumulative quoted order value"],
-      ["Financials", "Active Outstanding Balance", formatLKR(kpis.totalOutstandingLkr), "Uncollected balance across active orders"],
+      ["Financials", "Total Funds Collected (Custom Orders)", formatLKR(kpis.totalCollectedLkr), "Verified customer payments recorded"],
+      ["Financials", "Total Quoted Pipeline", formatLKR(kpis.totalQuotedLkr), "Cumulative quoted custom order value"],
+      ["Financials", "Active Outstanding Balance", formatLKR(kpis.totalOutstandingLkr), "Uncollected balance across active custom orders"],
       ["Financials", "Deposit Clearance Rate", `${kpis.depositClearanceRate}%`, "(Deposit/Fully Paid orders / Active payable orders) * 100"],
       ["Financials", "Fully Paid Orders", kpis.fullyPaidCount, "Orders with full amount received"],
       ["Financials", "Deposit Paid Orders", kpis.depositPaidCount, "Orders with deposit cleared"],
       ["Financials", "Unpaid Orders", kpis.unpaidCount, "Orders without recorded payment"],
       ["Overview", "Total Custom Orders", kpis.totalOrders, "All recorded custom cake requests"],
-      [
-        "Overview",
-        "Active Orders",
-        kpis.activeOrders,
-        "Orders in progress (excluding completed, declined, cancelled)",
-      ],
-      ["Overview", "Orders Ready", kpis.readyOrders, "Orders ready for pickup / delivery"],
-      [
-        "Customers",
-        "Total Registered Customers",
-        kpis.totalRegisteredCustomers,
-        "Customer accounts in directory",
-      ],
-      [
-        "Customers",
-        "Customers With Orders",
-        kpis.customersWithOrders,
-        "Customers with at least 1 custom order",
-      ],
-      [
-        "Customers",
-        "Repeat Customer Rate",
-        `${kpis.repeatCustomerRate}%`,
-        "(Customers with >= 2 orders / Customers with >= 1 order) * 100",
-      ],
-      [
-        "Reputation",
-        "Average Review Rating (CSAT)",
-        kpis.avgRating ? `${kpis.avgRating} / 5.0` : "N/A",
-        `Based on ${kpis.approvedReviewsCount} approved customer reviews`,
-      ],
-      [
-        "Communication",
-        "Unread Contact Inquiries",
-        kpis.unreadInquiries,
-        "Pending inquiries in inbox",
-      ],
+      ["Overview", "Active Orders", kpis.activeOrders, "Orders in progress (excluding completed, declined, cancelled)"],
+      ["Overview", "Orders Ready for Pickup", kpis.readyOrders, "Finished cakes awaiting customer collection"],
+      ["Kitchen Operations", "Average Production Duration", kitchenKPIs.averageDuration.formattedAvgDuration, `Calculated across ${kitchenKPIs.averageDuration.validOrdersCount} completed orders with valid start & completion timestamps`],
+      ["Kitchen Operations", "Orders with Valid Production Duration", kitchenKPIs.averageDuration.validOrdersCount, "Orders with both production_started_at and production_completed_at"],
+      ["Kitchen Operations", "Production Completion Rate", kitchenKPIs.completionRate.formattedRate, "Completed orders / Eligible production workflow orders (accepted, in_baking, ready, completed)"],
+      ["Kitchen Operations", "Overdue Orders (Total)", kitchenKPIs.overdueOrdersCount, "Active orders past event date"],
+      ["Kitchen Operations", "Overdue Production", kitchenKPIs.overdueProductionCount, "Accepted or In Baking orders past event date"],
+      ["Kitchen Operations", "Overdue Handover", kitchenKPIs.overdueHandoverCount, "Ready orders past event date awaiting pickup"],
+      ["Kitchen Operations", "Urgent Priority Orders", kitchenKPIs.urgentOrdersCount, "Active orders flagged with urgent production priority"],
+      ["Kitchen Operations", "At-Risk Orders", kitchenKPIs.atRiskOrdersCount, "Active orders imminent within 2 days with scheduling or payment blockers"],
+      ["Kitchen Operations", "Ready for Production", kitchenKPIs.readyForProductionCount, "Accepted orders with deposit cleared ready for oven"],
+      ["Kitchen Operations", "In Baking Station", kitchenKPIs.inBakingCount, "Orders currently in baking station"],
+      ["Kitchen Operations", "Payment Blocked Orders", kitchenKPIs.paymentBlockedCount, "Accepted orders requiring deposit before baking"],
+      ["Customers", "Total Registered Customers", kpis.totalRegisteredCustomers, "Customer accounts in directory"],
+      ["Customers", "Customers With Orders", kpis.customersWithOrders, "Customers with at least 1 custom order"],
+      ["Customers", "Repeat Customer Rate", `${kpis.repeatCustomerRate}%`, "(Customers with >= 2 orders / Customers with >= 1 order) * 100"],
+      ["Reputation", "Average Review Rating (CSAT)", kpis.avgRating ? `${kpis.avgRating} / 5.0` : "N/A", `Based on ${kpis.approvedReviewsCount} approved customer reviews`],
+      ["Communication", "Unread Contact Inquiries", kpis.unreadInquiries, "Pending inquiries in inbox"],
       ["Communication", "Total Inquiries", kpis.totalInquiries, "All received contact inquiries"],
-      [
-        "Alerts",
-        "Customer Notifications Sent",
-        kpis.totalNotifications,
-        "Automated status alerts generated",
-      ],
+      ["Alerts", "Customer Notifications Sent", kpis.totalNotifications, "Automated status alerts generated"],
     ];
 
     exportToCsv(`frostheaven-analytics-summary-${todayStr}.csv`, headers, rows);
     toast.success("Analytics summary exported to CSV");
+  };
+
+  // CSV 2: Kitchen Capacity Report CSV
+  const handleExportCapacityReport = () => {
+    const headers = [
+      "Date (YYYY-MM-DD)",
+      "Day of Week",
+      "Configured Capacity (Units)",
+      "Bake Workload (Units)",
+      "Decorate Workload (Units)",
+      "Total Committed Workload (Units)",
+      "Remaining Capacity (Units)",
+      "Capacity Utilization (%)",
+      "Capacity State",
+      "Blackout Closure",
+      "Blackout Reason",
+      "Data Quality Issues",
+    ];
+    const rows = generateCapacityReportCsvRows(forecast14Days);
+    exportToCsv(`kitchen-capacity-report-${todayStr}.csv`, headers, rows);
+    toast.success("14-day capacity report exported to CSV");
+  };
+
+  // CSV 3: Staff Workload Report CSV
+  const handleExportStaffWorkload = () => {
+    const headers = [
+      "Staff Member Name",
+      "Report Date",
+      "Assigned Bake Workload (Units)",
+      "Assigned Decorate Workload (Units)",
+      "Total Physical Workload (Units)",
+      "Bake Task Count",
+      "Decorate Task Count",
+      "Total Distinct Orders",
+      "Workload Guideline (Units)",
+      "Guideline Utilization (%)",
+      "Workload State",
+      "Data Quality Issues",
+    ];
+    const rows = generateStaffWorkloadReportCsvRows(staffSummary.staffWorkloads, todayStr);
+    exportToCsv(`staff-workload-report-${todayStr}.csv`, headers, rows);
+    toast.success("Staff workload report exported to CSV");
   };
 
   if (authLoading || !user || !profile || profile.role !== "admin") {
@@ -646,25 +681,26 @@ function AdminAnalyticsPage() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Comprehensive operational reporting, kitchen production capacity, and customer
-                insights.
+                Comprehensive operational reporting, kitchen production capacity, staff allocation, and custom order insights.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {lastUpdated && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground hidden md:inline">
               Last synced:{" "}
               {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
+
           <Button
             variant="outline"
+            size="sm"
             onClick={() => fetchAnalyticsData(true)}
             disabled={isRefreshing}
-            className="rounded-full gap-2 border-border/80 shadow-xs cursor-pointer"
+            className="rounded-full gap-1.5 border-border/80 shadow-xs cursor-pointer"
           >
             <RefreshCw
               className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
@@ -673,11 +709,42 @@ function AdminAnalyticsPage() {
           </Button>
 
           <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDailyManagementModal(true)}
+            className="rounded-full gap-1.5 border-primary/30 text-primary hover:bg-primary/10 shadow-xs cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>Daily Briefing (Print)</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCapacityReport}
+            className="rounded-full gap-1.5 border-border/80 shadow-xs cursor-pointer"
+          >
+            <Flame className="h-3.5 w-3.5 text-amber-600" />
+            <span>Capacity CSV</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportStaffWorkload}
+            className="rounded-full gap-1.5 border-border/80 shadow-xs cursor-pointer"
+          >
+            <Users className="h-3.5 w-3.5 text-blue-600" />
+            <span>Staff CSV</span>
+          </Button>
+
+          <Button
+            size="sm"
             onClick={handleExportAnalyticsSummary}
-            className="rounded-full gap-2 bg-primary text-primary-foreground shadow-xs cursor-pointer hover:bg-primary/90"
+            className="rounded-full gap-1.5 bg-primary text-primary-foreground shadow-xs cursor-pointer hover:bg-primary/90"
           >
             <Download className="h-3.5 w-3.5" />
-            <span>Export Summary (CSV)</span>
+            <span>Export Summary</span>
           </Button>
         </div>
       </div>
@@ -703,14 +770,376 @@ function AdminAnalyticsPage() {
         </div>
       )}
 
-      {/* 2. Multi-Domain KPI Summary Cards */}
+      {/* 2. KITCHEN OPERATIONS & EFFICIENCY SECTION (Phase 7G Core Enhancement) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <Layers className="h-4 w-4 text-primary" /> Key Operational & Financial Indicators
+            <ChefHat className="h-4 w-4 text-primary" /> Kitchen Operations & Production Efficiency
           </h2>
           <span className="text-xs text-muted-foreground">
-            Calculated across custom order pipeline & customer directory
+            Workload throughput, turnaround duration & kitchen risk tracking
+          </span>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Average Production Duration */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Average Production Duration</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
+                <Timer className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-foreground">
+                {kitchenKPIs.averageDuration.formattedAvgDuration}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {kitchenKPIs.averageDuration.validOrdersCount > 0
+                  ? `Across ${kitchenKPIs.averageDuration.validOrdersCount} completed order(s)`
+                  : "Requires recorded start & completion timestamps"}
+              </p>
+            </div>
+          </div>
+
+          {/* Card 2: Production Completion Rate */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Production Completion Rate</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-emerald-700">
+                {kitchenKPIs.completionRate.ratePercent}%
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {kitchenKPIs.completionRate.completedCount} of {kitchenKPIs.completionRate.eligibleCount} eligible production orders
+              </p>
+            </div>
+          </div>
+
+          {/* Card 3: Overdue Orders */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Overdue Orders</span>
+              <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${kitchenKPIs.overdueOrdersCount > 0 ? "bg-rose-500/20 text-rose-700 font-bold animate-pulse" : "bg-zinc-500/10 text-muted-foreground"}`}>
+                <AlertCircle className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className={`text-2xl font-bold ${kitchenKPIs.overdueOrdersCount > 0 ? "text-rose-700" : "text-foreground"}`}>
+                {kitchenKPIs.overdueOrdersCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {kitchenKPIs.overdueOrdersCount > 0
+                  ? `${kitchenKPIs.overdueProductionCount} in production • ${kitchenKPIs.overdueHandoverCount} in handover`
+                  : "All active orders within schedule"}
+              </p>
+            </div>
+          </div>
+
+          {/* Card 4: Urgent Priority Orders */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Urgent Priority Orders</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600">
+                <Flame className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-rose-600">
+                {kitchenKPIs.urgentOrdersCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Active cakes flagged for expedited kitchen handling
+              </p>
+            </div>
+          </div>
+
+          {/* Card 5: At-Risk Orders */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">At-Risk Orders</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-amber-700">
+                {kitchenKPIs.atRiskOrdersCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Imminent within 2 days with scheduling or deposit blockers
+              </p>
+            </div>
+          </div>
+
+          {/* Card 6: Ready for Production */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Ready for Production</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-emerald-700">
+                {kitchenKPIs.readyForProductionCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Accepted orders with deposit cleared ready for oven
+              </p>
+            </div>
+          </div>
+
+          {/* Card 7: In Baking Station */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">In Baking Station</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
+                <ChefHat className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-purple-700">
+                {kitchenKPIs.inBakingCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Active cakes currently in oven or decorating station
+              </p>
+            </div>
+          </div>
+
+          {/* Card 8: Ready for Pickup */}
+          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Ready for Pickup</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600">
+                <PackageCheck className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-2xl font-bold text-teal-700">
+                {kitchenKPIs.readyForPickupCount}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Finished pastry packaged awaiting customer collection
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. 14-DAY PRODUCTION WORKLOAD VS CAPACITY HORIZON (Phase 7G Enhancement) */}
+      <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/50 pb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-teal-600" /> 14-Day Kitchen Workload vs Capacity Horizon
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Comparison of Event Order Count vs Scheduled Production Workload (Complexity Units) against Configured Daily Kitchen Capacity
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+              Committed Statuses: Accepted, In Baking
+            </span>
+          </div>
+        </div>
+
+        {/* 14-Day Visual Chart */}
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={forecast14Days}
+              margin={{ top: 10, right: 10, left: -20, bottom: 25 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#e2e8f0"
+                opacity={0.6}
+              />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 10 }}
+                angle={-35}
+                textAnchor="end"
+                interval={0}
+                stroke="#94a3b8"
+              />
+              <YAxis allowDecimals={true} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+              <Tooltip
+                formatter={(
+                  value: unknown,
+                  name: unknown,
+                  item: { payload?: DailyWorkloadForecastItem },
+                ) => {
+                  const p = item.payload;
+                  if (!p) return [`${value}`, `${name}`];
+                  if (name === "productionWorkloadUnits") {
+                    return [
+                      `${value}u (${p.bakeWorkloadUnits.toFixed(1)}u Bake, ${p.decorateWorkloadUnits.toFixed(1)}u Decorate) / ${p.configuredDailyCapacity.toFixed(1)}u max (${p.utilizationPercent}% load)`,
+                      "Production Workload",
+                    ];
+                  }
+                  return [`${value} event(s)`, "Event Orders"];
+                }}
+                contentStyle={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "1rem",
+                  border: "1px solid #e2e8f0",
+                  fontSize: "12px",
+                }}
+              />
+              <Bar dataKey="eventOrderCount" name="Event Orders" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="productionWorkloadUnits" name="Production Workload (Units)" radius={[6, 6, 0, 0]}>
+                {forecast14Days.map((entry, index) => (
+                  <Cell
+                    key={`cap-bar-${index}`}
+                    fill={
+                      entry.isBlackout
+                        ? "#71717a"
+                        : entry.capacityState === "over_capacity"
+                        ? "#f43f5e"
+                        : entry.capacityState === "near_capacity"
+                        ? "#f59e0b"
+                        : "#10b981"
+                    }
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 14-Day Horizon Data Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse border border-border/60 rounded-xl overflow-hidden">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-foreground font-semibold">
+                <th className="py-2.5 px-3">Date & Day</th>
+                <th className="py-2.5 px-3">Event Orders</th>
+                <th className="py-2.5 px-3">Bake Units</th>
+                <th className="py-2.5 px-3">Decorate Units</th>
+                <th className="py-2.5 px-3">Total Workload</th>
+                <th className="py-2.5 px-3">Daily Capacity</th>
+                <th className="py-2.5 px-3">Remaining</th>
+                <th className="py-2.5 px-3">Utilization</th>
+                <th className="py-2.5 px-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60 font-mono">
+              {forecast14Days.map((item) => (
+                <tr key={item.dateStr} className="hover:bg-muted/10 font-sans">
+                  <td className="py-2 px-3 font-semibold text-foreground">
+                    {item.label} <span className="text-[10px] text-muted-foreground font-mono">({item.dateStr})</span>
+                  </td>
+                  <td className="py-2 px-3 font-mono font-medium">{item.eventOrderCount}</td>
+                  <td className="py-2 px-3 font-mono text-purple-700">{item.bakeWorkloadUnits.toFixed(1)}u</td>
+                  <td className="py-2 px-3 font-mono text-pink-700">{item.decorateWorkloadUnits.toFixed(1)}u</td>
+                  <td className="py-2 px-3 font-mono font-bold text-foreground">{item.productionWorkloadUnits.toFixed(1)}u</td>
+                  <td className="py-2 px-3 font-mono text-muted-foreground">
+                    {item.isBlackout ? "0.0u (Closed)" : `${item.configuredDailyCapacity.toFixed(1)}u`}
+                  </td>
+                  <td className="py-2 px-3 font-mono font-semibold">
+                    {item.remainingCapacityUnits.toFixed(1)}u
+                  </td>
+                  <td className="py-2 px-3 font-mono font-bold">
+                    {item.utilizationPercent.toFixed(0)}%
+                  </td>
+                  <td className="py-2 px-3">
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${item.badgeClass}`}>
+                      {item.capacityStateLabel}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 4. STAFF WORKLOAD & ROSTER DISTRIBUTION SUMMARY (Phase 7G Enhancement) */}
+      <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/50 pb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Users className="h-4 w-4 text-blue-600" /> Today's Staff Allocation & Workload Distribution
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Assigned physical cake workload across active bakery staff on {todayStr} (Soft Guideline: 6.0 units / person)
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportStaffWorkload}
+            className="rounded-full gap-1.5 border-border/80 shadow-xs cursor-pointer text-xs"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export Staff Workload</span>
+          </Button>
+        </div>
+
+        {staffSummary.staffWorkloads.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground border border-dashed border-border rounded-xl">
+            No admin staff profiles found.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse border border-border/60 rounded-xl overflow-hidden">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-foreground font-semibold">
+                  <th className="py-2.5 px-3">Staff Member</th>
+                  <th className="py-2.5 px-3">Bake Tasks</th>
+                  <th className="py-2.5 px-3">Decorate Tasks</th>
+                  <th className="py-2.5 px-3">Total Physical Load</th>
+                  <th className="py-2.5 px-3">Guideline Load (6.0u)</th>
+                  <th className="py-2.5 px-3">Workload State</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60 font-mono">
+                {staffSummary.staffWorkloads.map((w) => (
+                  <tr key={w.staffId} className="hover:bg-muted/10 font-sans">
+                    <td className="py-2 px-3 font-semibold text-foreground">{w.staffName}</td>
+                    <td className="py-2 px-3 font-mono">{w.bakeTaskCount} ({w.bakeUnits.toFixed(1)}u)</td>
+                    <td className="py-2 px-3 font-mono">{w.decorateTaskCount} ({w.decorateUnits.toFixed(1)}u)</td>
+                    <td className="py-2 px-3 font-mono font-bold text-foreground">{w.totalPhysicalWorkloadUnits.toFixed(1)} units</td>
+                    <td className="py-2 px-3 font-mono font-medium">{w.utilizationPercent.toFixed(0)}%</td>
+                    <td className="py-2 px-3">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${w.badgeClass}`}>
+                        {w.stateLabel}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(staffSummary.unassignedBakersCount > 0 || staffSummary.unassignedDecoratorsCount > 0) && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 font-medium flex items-center justify-between">
+            <span>⚠️ Unassigned Kitchen Roles on {todayStr}:</span>
+            <span className="font-bold">
+              {staffSummary.unassignedBakersCount} Bake task(s) unassigned • {staffSummary.unassignedDecoratorsCount} Decorate task(s) unassigned
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Multi-Domain Financial & Customer Indicators */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" /> Key Financial & Customer Indicators
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            Custom order pipeline & customer directory metrics
           </span>
         </div>
 
@@ -718,7 +1147,7 @@ function AdminAnalyticsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Funds Collected</span>
+              <span className="text-xs font-medium text-muted-foreground">Custom Order Spend Collected</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <Banknote className="h-4 w-4" />
               </div>
@@ -728,14 +1157,14 @@ function AdminAnalyticsPage() {
                 {formatLKR(kpis.totalCollectedLkr)}
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Verified deposits & full payments
+                Verified deposits & full payments recorded
               </p>
             </div>
           </div>
 
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Quoted Pipeline</span>
+              <span className="text-xs font-medium text-muted-foreground">Quoted Custom Pipeline</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600">
                 <DollarSign className="h-4 w-4" />
               </div>
@@ -785,62 +1214,11 @@ function AdminAnalyticsPage() {
           </div>
         </div>
 
-        {/* Operational Indicators (8 Cards) */}
+        {/* Customer & Inquiry Indicators (4 Cards) */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-1">
-          {/* Card 1: Total Custom Orders */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Total Custom Orders</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Cake className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-bold text-foreground">{kpis.totalOrders}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                All booking submissions to date
-              </p>
-            </div>
-          </div>
-
-          {/* Card 2: Active Orders */}
-          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Active Orders</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
-                <Clock className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-bold text-amber-600">{kpis.activeOrders}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                In review, quoted, accepted, or baking
-              </p>
-            </div>
-          </div>
-
-          {/* Card 3: Orders Ready */}
-          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Orders Ready</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-bold text-teal-600">{kpis.readyOrders}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Awaiting customer pickup / dispatch
-              </p>
-            </div>
-          </div>
-
-          {/* Card 4: Registered Customers */}
-          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
-                Registered Customers
-              </span>
+              <span className="text-xs font-medium text-muted-foreground">Registered Customers</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600">
                 <Users className="h-4 w-4" />
               </div>
@@ -855,32 +1233,9 @@ function AdminAnalyticsPage() {
             </div>
           </div>
 
-          {/* Card 5: Customers with Orders */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
-                Customers With Orders
-              </span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
-                <HeartHandshake className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="text-2xl font-bold text-blue-600">{kpis.customersWithOrders}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {kpis.totalRegisteredCustomers > 0
-                  ? `${Math.round((kpis.customersWithOrders / kpis.totalRegisteredCustomers) * 100)}% conversion from account creation`
-                  : "0% conversion"}
-              </p>
-            </div>
-          </div>
-
-          {/* Card 6: Repeat Customer Rate */}
-          <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
-                Repeat Customer Rate
-              </span>
+              <span className="text-xs font-medium text-muted-foreground">Repeat Customer Rate</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
                 <TrendingUp className="h-4 w-4" />
               </div>
@@ -888,17 +1243,14 @@ function AdminAnalyticsPage() {
             <div className="mt-4">
               <div className="text-2xl font-bold text-purple-600">{kpis.repeatCustomerRate}%</div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Ordering customers placing 2+ cake requests
+                Ordering customers placing 2+ custom cake requests
               </p>
             </div>
           </div>
 
-          {/* Card 7: Average Review Rating */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">
-                Average Review Rating
-              </span>
+              <span className="text-xs font-medium text-muted-foreground">Average Review Rating</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
                 <Star className="h-4 w-4 fill-amber-500" />
               </div>
@@ -915,7 +1267,6 @@ function AdminAnalyticsPage() {
             </div>
           </div>
 
-          {/* Card 8: Unread Inquiries */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Unread Inquiries</span>
@@ -927,7 +1278,7 @@ function AdminAnalyticsPage() {
               <div className="text-2xl font-bold text-rose-600">{kpis.unreadInquiries}</div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 {kpis.unreadInquiries > 0
-                  ? "Requires admin team response"
+                  ? "Requires admin response in inbox"
                   : "All customer inquiries resolved"}
               </p>
             </div>
@@ -935,9 +1286,9 @@ function AdminAnalyticsPage() {
         </div>
       </div>
 
-      {/* 3. Recharts Section 1: Monthly Volume (created_at) & Event Type Distribution */}
+      {/* 6. Charts: Monthly Volume & Event Distribution */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* 3A. Monthly Custom Order Volume */}
+        {/* 6A. Monthly Custom Order Volume */}
         <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between border-b border-border/50 pb-4">
             <div>
@@ -1007,7 +1358,7 @@ function AdminAnalyticsPage() {
           </div>
         </div>
 
-        {/* 3B. Event Type Distribution */}
+        {/* 6B. Event Type Distribution */}
         <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between border-b border-border/50 pb-4">
             <div>
@@ -1092,89 +1443,9 @@ function AdminAnalyticsPage() {
         </div>
       </div>
 
-      {/* 4. Recharts Section 2: 14-Day Kitchen Workload Forecast & Order Status Workflow Funnel */}
+      {/* 7. Charts: Status Pipeline Funnel & Payment Clearance */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* 4A. 14-Day Kitchen Workload Forecast (event_date) */}
-        <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between border-b border-border/50 pb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-teal-600" /> 14-Day Kitchen Workload Forecast
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Active cakes scheduled for production by celebration deadline (`event_date`)
-              </p>
-            </div>
-            <span className="rounded-full bg-teal-500/10 border border-teal-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-teal-700">
-              Next 14 Days
-            </span>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={upcomingWorkloadData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 25 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                  opacity={0.6}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10 }}
-                  angle={-35}
-                  textAnchor="end"
-                  interval={0}
-                  stroke="#94a3b8"
-                />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                <Tooltip
-                  formatter={(
-                    value: unknown,
-                    _name: unknown,
-                    item: { payload?: { dateStr?: string } },
-                  ) => [`${value} active orders`, `Date: ${item.payload?.dateStr ?? ""}`]}
-                  contentStyle={{
-                    backgroundColor: "#ffffff",
-                    borderRadius: "1rem",
-                    border: "1px solid #e2e8f0",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="activeOrders" radius={[6, 6, 0, 0]}>
-                  {upcomingWorkloadData.map((entry, index) => (
-                    <Cell
-                      key={`workload-bar-${index}`}
-                      fill={
-                        entry.activeOrders === 0 ? "#e2e8f0" : entry.isBusy ? "#f59e0b" : "#14b8a6"
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="border-t border-border/50 pt-3 text-[11px] text-muted-foreground flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-teal-500" /> Standard Load
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> High Workload (2+ Cakes)
-              </span>
-            </div>
-            <span>
-              Upcoming 14-Day Queue:{" "}
-              {upcomingWorkloadData.reduce((sum, d) => sum + d.activeOrders, 0)} Cakes
-            </span>
-          </div>
-        </div>
-
-        {/* 4B. Status Pipeline & Workflow Distribution */}
+        {/* 7A. Status Pipeline Funnel */}
         <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between border-b border-border/50 pb-4">
             <div>
@@ -1242,11 +1513,8 @@ function AdminAnalyticsPage() {
             </span>
           </div>
         </div>
-      </div>
 
-      {/* 5. Recharts Section 3: Payment Status & Production Readiness Funnel */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* 5A. Payment Status Breakdown */}
+        {/* 7B. Payment Clearance & Readiness Pipeline */}
         <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between border-b border-border/50 pb-4">
             <div>
@@ -1334,65 +1602,19 @@ function AdminAnalyticsPage() {
             <span>Outstanding: {formatLKR(kpis.totalOutstandingLkr)}</span>
           </div>
         </div>
-
-        {/* 5B. Production Readiness Pipeline */}
-        <div className="rounded-3xl bg-card p-6 shadow-soft border border-border/70 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between border-b border-border/50 pb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-purple-600" /> Operational Production Readiness
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Financial clearance & baking readiness stages across active and completed orders
-              </p>
-            </div>
-            <span className="rounded-full bg-purple-500/10 border border-purple-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">
-              Kitchen Workflow
-            </span>
-          </div>
-
-          <div className="space-y-2.5 overflow-y-auto max-h-64 pr-2">
-            {readinessPipelineData.map((item) => (
-              <div key={item.key} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="font-medium text-foreground">{item.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-foreground font-mono">{item.count} orders</span>
-                    <span className="text-muted-foreground text-[11px]">({item.percentage}%)</span>
-                  </div>
-                </div>
-
-                <div className="h-2 w-full overflow-hidden rounded-full bg-secondary/80">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.max(Number(item.percentage), item.count > 0 ? 4 : 0)}%`,
-                      backgroundColor: item.color,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="border-t border-border/50 pt-3 text-[11px] text-muted-foreground flex items-center justify-between">
-            <span>
-              Production Ready / Cleared:{" "}
-              {readinessPipelineData.find((r) => r.key === "ready_for_production")?.count || 0} Orders
-            </span>
-            <span>
-              Awaiting Deposit:{" "}
-              {readinessPipelineData.find((r) => r.key === "awaiting_deposit")?.count || 0} Orders
-            </span>
-          </div>
-        </div>
       </div>
+
+      {/* 8. Daily Management Briefing Modal */}
+      {showDailyManagementModal && (
+        <DailyManagementSummaryModal
+          orders={orders}
+          selectedDate={todayStr}
+          staffList={staff}
+          capacitySettings={capacitySettings}
+          blackoutDates={blackoutDates}
+          onClose={() => setShowDailyManagementModal(false)}
+        />
+      )}
     </div>
   );
 }

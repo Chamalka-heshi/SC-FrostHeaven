@@ -60,6 +60,8 @@ export interface DailyCapacityResult {
   stateLabel: string;
   badgeClass: string;
   progressBarClass: string;
+  hasInvalidComplexity: boolean;
+  invalidComplexityOrderCount: number;
 }
 
 // Fallback constant if a weekday setting is missing
@@ -148,14 +150,15 @@ export function calculateDailyCapacity(
   }
 
   // 3. Process committed orders scheduled on this date
-  const committedOrdersOnDate = new Map<string, CapacityOrderInput>();
+  const committedOrdersOnDate = new Map<string, { order: CapacityOrderInput; validComplexity: number | null }>();
   let bakeTaskCount = 0;
   let bakeWorkloadUnits = 0;
   let decorateTaskCount = 0;
   let decorateWorkloadUnits = 0;
+  let invalidComplexityOrderCount = 0;
 
   // Separate tracking for tentative pipeline
-  const tentativeOrdersOnDate = new Map<string, CapacityOrderInput>();
+  const tentativeOrdersOnDate = new Map<string, { order: CapacityOrderInput; validComplexity: number | null }>();
 
   for (const order of orders) {
     const isBakeOnDate = order.scheduled_bake_date === dateYMD;
@@ -165,40 +168,54 @@ export function calculateDailyCapacity(
       continue;
     }
 
-    const complexity = sanitizeComplexityUnits(order.complexity_units) ?? 1.0;
+    const validComplexity = sanitizeComplexityUnits(order.complexity_units);
+    if (validComplexity === null) {
+      invalidComplexityOrderCount++;
+    }
 
     // A. Committed Orders
     if (isCommittedProductionStatus(order.status)) {
       if (isBakeOnDate) {
         bakeTaskCount++;
-        bakeWorkloadUnits += complexity;
+        if (validComplexity !== null) {
+          bakeWorkloadUnits += validComplexity;
+        }
       }
       if (isDecorateOnDate) {
         decorateTaskCount++;
-        decorateWorkloadUnits += complexity;
+        if (validComplexity !== null) {
+          decorateWorkloadUnits += validComplexity;
+        }
       }
       // Store distinct order to enforce Same-Day Single Count rule for total daily workload
-      committedOrdersOnDate.set(order.id, order);
+      committedOrdersOnDate.set(order.id, { order, validComplexity });
     }
     // B. Tentative Pipeline Orders
     else if (isTentativePipelineStatus(order.status)) {
-      tentativeOrdersOnDate.set(order.id, order);
+      tentativeOrdersOnDate.set(order.id, { order, validComplexity });
     }
   }
 
   // Calculate distinct committed daily workload (Same-day single count rule)
   let committedWorkloadUnits = 0;
-  committedOrdersOnDate.forEach((order) => {
-    const complexity = sanitizeComplexityUnits(order.complexity_units) ?? 1.0;
-    committedWorkloadUnits += complexity;
+  committedOrdersOnDate.forEach(({ validComplexity }) => {
+    if (validComplexity !== null) {
+      committedWorkloadUnits += validComplexity;
+    }
   });
 
   // Calculate distinct tentative daily workload
   let tentativeWorkloadUnits = 0;
-  tentativeOrdersOnDate.forEach((order) => {
-    const complexity = sanitizeComplexityUnits(order.complexity_units) ?? 1.0;
-    tentativeWorkloadUnits += complexity;
+  tentativeOrdersOnDate.forEach(({ validComplexity }) => {
+    if (validComplexity !== null) {
+      tentativeWorkloadUnits += validComplexity;
+    }
   });
+
+  committedWorkloadUnits = Math.round(committedWorkloadUnits * 10) / 10;
+  bakeWorkloadUnits = Math.round(bakeWorkloadUnits * 10) / 10;
+  decorateWorkloadUnits = Math.round(decorateWorkloadUnits * 10) / 10;
+  tentativeWorkloadUnits = Math.round(tentativeWorkloadUnits * 10) / 10;
 
   // 4. Calculate remaining units & utilization
   const committedOrderCount = committedOrdersOnDate.size;
@@ -226,7 +243,7 @@ export function calculateDailyCapacity(
       progressBarClass = "bg-zinc-500";
     }
   } else {
-    remainingUnits = maxCapacityUnits - committedWorkloadUnits;
+    remainingUnits = Math.round((maxCapacityUnits - committedWorkloadUnits) * 10) / 10;
     utilizationPercent = maxCapacityUnits > 0
       ? (committedWorkloadUnits / maxCapacityUnits) * 100
       : 0;
@@ -270,6 +287,8 @@ export function calculateDailyCapacity(
     stateLabel,
     badgeClass,
     progressBarClass,
+    hasInvalidComplexity: invalidComplexityOrderCount > 0,
+    invalidComplexityOrderCount,
   };
 }
 

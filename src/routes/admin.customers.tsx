@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import { exportToCsv } from "@/lib/csv-export";
+import { exportToCsv, getLocalDateString } from "@/lib/csv-export";
 import { formatLKR, getProductionReadiness, getPaymentBadgeInfo } from "@/lib/order-readiness";
 
 export const Route = createFileRoute("/admin/customers")({
@@ -405,7 +405,7 @@ function AdminCustomersPage() {
       c.latestOrder?.status || "",
       c.created_at,
     ]);
-    const dateStamp = new Date().toISOString().split("T")[0];
+    const dateStamp = getLocalDateString();
     exportToCsv(`customers-${dateStamp}.csv`, headers, rows);
     toast.success("Customer directory exported to CSV.");
   };

@@ -317,7 +317,7 @@ export function DailyProductionSummaryModal({
                     const riskInfo = getAtRiskInfo(order, displayDate);
 
                     return (
-                      <tr key={order.id} className="hover:bg-muted/20">
+                      <tr key={order.id} className="hover:bg-muted/20 break-inside-avoid page-break-inside-avoid">
                         <td className="py-3 px-3 font-mono font-bold align-top">
                           <div className="text-primary">#{shortId}</div>
                           {order.production_priority && order.production_priority !== "normal" && (

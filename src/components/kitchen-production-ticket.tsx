@@ -322,7 +322,7 @@ export function KitchenProductionTicket({
           </div>
 
           {/* Cake Details & Specifications */}
-          <div className="space-y-2">
+          <div className="space-y-2 break-inside-avoid page-break-inside-avoid">
             <h3 className="text-xs uppercase tracking-wider font-bold text-foreground print:text-black flex items-center gap-1.5">
               <FileText className="h-4 w-4 text-primary print:text-black" />
               Cake Design Specifications & Ingredients
@@ -334,7 +334,7 @@ export function KitchenProductionTicket({
 
           {/* Kitchen Notes */}
           {(order.internal_notes || order.admin_notes) && (
-            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 print:bg-neutral-50 print:border-black p-4 space-y-1.5">
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 print:bg-neutral-50 print:border-black p-4 space-y-1.5 break-inside-avoid page-break-inside-avoid">
               <h4 className="text-xs uppercase tracking-wider font-bold text-amber-900 dark:text-amber-300 print:text-black flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-amber-700 print:text-black" />
                 Kitchen Notes & Instructions

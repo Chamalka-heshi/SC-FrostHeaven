@@ -37,6 +37,8 @@ import {
   Settings2,
   TrendingUp,
   Trash2,
+  Printer,
+  Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
@@ -66,6 +68,13 @@ import {
   type StaffDailyWorkloadResult,
   type AssignmentState,
 } from "@/lib/staff-workload-utils";
+import { exportToCsv, getLocalDateString } from "@/lib/csv-export";
+import { DailyManagementSummaryModal } from "@/components/daily-management-summary-modal";
+import {
+  generateCapacityReportCsvRows,
+  generateStaffWorkloadReportCsvRows,
+  calculate14DayWorkloadCapacityForecast,
+} from "@/lib/analytics-utils";
 
 export const Route = createFileRoute("/admin/scheduling")({
   head: () => ({
@@ -268,8 +277,60 @@ function AdminSchedulingPage() {
   // Side Drawer / Modal States
   const [showUnscheduledDrawer, setShowUnscheduledDrawer] = useState(false);
   const [showCapacitySettingsModal, setShowCapacitySettingsModal] = useState(false);
+  const [showDailyManagementModal, setShowDailyManagementModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<SchedulingOrder | null>(null);
   const [viewingOrder, setViewingOrder] = useState<SchedulingOrder | null>(null);
+
+  // Phase 7G CSV Export Handlers
+  const handleExportCapacityReport = () => {
+    const today = getLocalDateString(new Date());
+    const forecast = calculate14DayWorkloadCapacityForecast(
+      orders as any,
+      capacitySettings,
+      blackoutDates,
+      today
+    );
+    const headers = [
+      "Date (YYYY-MM-DD)",
+      "Day of Week",
+      "Configured Capacity (Units)",
+      "Bake Workload (Units)",
+      "Decorate Workload (Units)",
+      "Total Committed Workload (Units)",
+      "Remaining Capacity (Units)",
+      "Capacity Utilization (%)",
+      "Capacity State",
+      "Blackout Closure",
+      "Blackout Reason",
+      "Data Quality Issues",
+    ];
+    const rows = generateCapacityReportCsvRows(forecast);
+    exportToCsv(`kitchen-capacity-report-${today}.csv`, headers, rows);
+    toast.success("14-day capacity report exported to CSV");
+  };
+
+  const handleExportStaffWorkload = () => {
+    const today = getLocalDateString(new Date());
+    const targetDate = selectedDateYMD || today;
+    const summary = getStaffWorkloadSummary(targetDate, staffList as any, orders as any);
+    const headers = [
+      "Staff Member Name",
+      "Report Date",
+      "Assigned Bake Workload (Units)",
+      "Assigned Decorate Workload (Units)",
+      "Total Physical Workload (Units)",
+      "Bake Task Count",
+      "Decorate Task Count",
+      "Total Distinct Orders",
+      "Workload Guideline (Units)",
+      "Guideline Utilization (%)",
+      "Workload State",
+      "Data Quality Issues",
+    ];
+    const rows = generateStaffWorkloadReportCsvRows(summary.staffWorkloads, targetDate);
+    exportToCsv(`staff-workload-report-${targetDate}.csv`, headers, rows);
+    toast.success(`Staff workload report for ${targetDate} exported to CSV`);
+  };
 
   // Scheduling Form State
   const [formBakeDate, setFormBakeDate] = useState("");
@@ -918,6 +979,42 @@ function AdminSchedulingPage() {
                 {unscheduledOrders.length}
               </span>
             )}
+          </Button>
+
+          {/* Daily Management Briefing Print Button */}
+          <Button
+            onClick={() => setShowDailyManagementModal(true)}
+            variant="outline"
+            size="sm"
+            className="rounded-full gap-1.5 border-primary/30 text-primary hover:bg-primary/10 shadow-xs cursor-pointer"
+            title="Open printable executive kitchen briefing"
+          >
+            <Printer className="h-4 w-4" />
+            <span className="hidden sm:inline">Daily Briefing</span>
+          </Button>
+
+          {/* Capacity CSV Export */}
+          <Button
+            onClick={handleExportCapacityReport}
+            variant="outline"
+            size="sm"
+            className="rounded-full gap-1.5 bg-card shadow-xs hover:bg-secondary cursor-pointer"
+            title="Export 14-day capacity report (CSV)"
+          >
+            <Flame className="h-4 w-4 text-amber-600" />
+            <span className="hidden md:inline">Capacity CSV</span>
+          </Button>
+
+          {/* Staff Workload CSV Export */}
+          <Button
+            onClick={handleExportStaffWorkload}
+            variant="outline"
+            size="sm"
+            className="rounded-full gap-1.5 bg-card shadow-xs hover:bg-secondary cursor-pointer"
+            title="Export staff workload report for selected date (CSV)"
+          >
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="hidden md:inline">Staff CSV</span>
           </Button>
 
           <Button
@@ -2539,6 +2636,18 @@ function AdminSchedulingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 10. DAILY MANAGEMENT PRINT BRIEFING MODAL */}
+      {showDailyManagementModal && (
+        <DailyManagementSummaryModal
+          orders={orders as any}
+          selectedDate={selectedDateYMD}
+          staffList={staffList}
+          capacitySettings={capacitySettings}
+          blackoutDates={blackoutDates}
+          onClose={() => setShowDailyManagementModal(false)}
+        />
       )}
     </div>
   );

@@ -44,7 +44,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { KitchenProductionView } from "@/components/kitchen-production-view";
 import { KitchenProductionTicket } from "@/components/kitchen-production-ticket";
-import { exportToCsv } from "@/lib/csv-export";
+import { exportToCsv, getLocalDateString } from "@/lib/csv-export";
 import {
   getProductionReadiness,
   getPaymentBadgeInfo,
@@ -358,8 +358,7 @@ function AdminOrdersPage() {
 
   // 5. Filter & Sort Orders for Table View
   const filteredOrders = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().split("T")[0] || "";
+    const todayStr = getLocalDateString();
     const query = searchQuery.toLowerCase().trim();
 
     return orders
@@ -942,7 +941,7 @@ function AdminOrdersPage() {
 
   // 13. Export Custom Orders to CSV (Structured Financial Columns Included)
   const handleExportOrdersCsv = () => {
-    const todayStr = new Date().toISOString().split("T")[0] || "";
+    const todayStr = getLocalDateString();
     const headers = [
       "Order ID",
       "Customer Name",

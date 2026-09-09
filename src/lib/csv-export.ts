@@ -1,7 +1,13 @@
 /**
- * Universal RFC-4180 compliant CSV export utility
- * Supports quote escaping, multiline strings, commas, UTF-8 BOM, and browser download triggers.
+ * Returns a timezone-safe local calendar date string (YYYY-MM-DD).
+ * Uses local calendar components (getFullYear, getMonth, getDate).
  */
+export function getLocalDateString(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 export function formatCsvValue(val: unknown): string {
   if (val === null || val === undefined) {

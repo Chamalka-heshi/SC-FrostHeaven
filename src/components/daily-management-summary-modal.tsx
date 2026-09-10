@@ -60,7 +60,7 @@ export function DailyManagementSummaryModal({
   onClose,
 }: DailyManagementSummaryModalProps) {
   const [currentDateYMD, setCurrentDateYMD] = useState<string>(
-    selectedDate || getLocalDateString(new Date())
+    selectedDate || getLocalDateString(new Date()),
   );
 
   const staffMap = useMemo(() => {
@@ -95,7 +95,7 @@ export function DailyManagementSummaryModal({
       parseInt(parts[2] || "1", 10) - 1,
       12,
       0,
-      0
+      0,
     );
     setCurrentDateYMD(getLocalDateString(d));
   };
@@ -108,7 +108,7 @@ export function DailyManagementSummaryModal({
       parseInt(parts[2] || "1", 10) + 1,
       12,
       0,
-      0
+      0,
     );
     setCurrentDateYMD(getLocalDateString(d));
   };
@@ -170,7 +170,9 @@ export function DailyManagementSummaryModal({
 
   const atRiskOrders = useMemo(() => {
     const blackoutSet = new Set(blackoutDates.map((b) => b.blackout_date));
-    return orders.filter((o) => getAtRiskInfo(o, currentDateYMD, undefined, { blackoutDates: blackoutSet }).isAtRisk);
+    return orders.filter(
+      (o) => getAtRiskInfo(o, currentDateYMD, undefined, { blackoutDates: blackoutSet }).isAtRisk,
+    );
   }, [orders, currentDateYMD, blackoutDates]);
 
   const paymentBlockedOrders = useMemo(() => {
@@ -187,7 +189,6 @@ export function DailyManagementSummaryModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto print:p-0 print:bg-white print:static">
       <div className="relative flex max-h-[94vh] w-full max-w-5xl flex-col rounded-3xl bg-card shadow-2xl border border-border/80 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200 print:shadow-none print:border-none print:max-h-none print:w-full print:rounded-none">
-        
         {/* Modal Controls Header (Screen Only) */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-border/60 px-6 py-4 bg-muted/40 sticky top-0 z-20 backdrop-blur-xs print:hidden">
           <div className="flex items-center gap-2.5">
@@ -291,32 +292,44 @@ export function DailyManagementSummaryModal({
                 <Flame className="h-4 w-4 text-primary print:text-black" />
                 Kitchen Capacity Utilization
               </h4>
-              <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold border ${capacityResult.badgeClass} print:border-black print:text-black`}>
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold border ${capacityResult.badgeClass} print:border-black print:text-black`}
+              >
                 {capacityResult.stateLabel}
               </span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="rounded-xl border border-border/60 print:border-black/40 p-2.5 bg-card print:bg-white">
-                <span className="text-muted-foreground print:text-black font-medium">Configured Capacity:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Configured Capacity:
+                </span>
                 <p className="text-base font-bold text-foreground print:text-black mt-0.5">
-                  {capacityResult.isBlackout ? "0.0 units (Closed)" : `${capacityResult.maxCapacityUnits.toFixed(1)} units`}
+                  {capacityResult.isBlackout
+                    ? "0.0 units (Closed)"
+                    : `${capacityResult.maxCapacityUnits.toFixed(1)} units`}
                 </p>
               </div>
               <div className="rounded-xl border border-border/60 print:border-black/40 p-2.5 bg-card print:bg-white">
-                <span className="text-muted-foreground print:text-black font-medium">Committed Workload:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Committed Workload:
+                </span>
                 <p className="text-base font-bold text-foreground print:text-black mt-0.5">
                   {capacityResult.committedWorkloadUnits.toFixed(1)} units
                 </p>
               </div>
               <div className="rounded-xl border border-border/60 print:border-black/40 p-2.5 bg-card print:bg-white">
-                <span className="text-muted-foreground print:text-black font-medium">Remaining Capacity:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Remaining Capacity:
+                </span>
                 <p className="text-base font-bold text-foreground print:text-black mt-0.5">
                   {capacityResult.remainingUnits.toFixed(1)} units
                 </p>
               </div>
               <div className="rounded-xl border border-border/60 print:border-black/40 p-2.5 bg-card print:bg-white">
-                <span className="text-muted-foreground print:text-black font-medium">Capacity Utilization:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Capacity Utilization:
+                </span>
                 <p className="text-base font-bold text-foreground print:text-black mt-0.5">
                   {capacityResult.utilizationPercent.toFixed(1)}%
                 </p>
@@ -325,7 +338,8 @@ export function DailyManagementSummaryModal({
 
             {capacityResult.hasInvalidComplexity && (
               <p className="text-[11px] text-amber-700 dark:text-amber-300 print:text-black font-medium">
-                ⚠️ Notice: {capacityResult.invalidComplexityOrderCount} scheduled order(s) have unrated complexity units and are excluded from numerical load.
+                ⚠️ Notice: {capacityResult.invalidComplexityOrderCount} scheduled order(s) have
+                unrated complexity units and are excluded from numerical load.
               </p>
             )}
           </div>
@@ -338,34 +352,62 @@ export function DailyManagementSummaryModal({
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">Ready to Bake</span>
-                <p className="text-xl font-bold text-emerald-700 print:text-black mt-0.5">{readyToBakeCount}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  Ready to Bake
+                </span>
+                <p className="text-xl font-bold text-emerald-700 print:text-black mt-0.5">
+                  {readyToBakeCount}
+                </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">In Baking</span>
-                <p className="text-xl font-bold text-purple-700 print:text-black mt-0.5">{inBakingCount}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  In Baking
+                </span>
+                <p className="text-xl font-bold text-purple-700 print:text-black mt-0.5">
+                  {inBakingCount}
+                </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">Ready for Pickup</span>
-                <p className="text-xl font-bold text-teal-700 print:text-black mt-0.5">{readyForPickupCount}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  Ready for Pickup
+                </span>
+                <p className="text-xl font-bold text-teal-700 print:text-black mt-0.5">
+                  {readyForPickupCount}
+                </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">Overdue</span>
-                <p className={`text-xl font-bold mt-0.5 ${overdueOrders.length > 0 ? "text-rose-700 print:text-black font-extrabold" : "text-foreground print:text-black"}`}>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  Overdue
+                </span>
+                <p
+                  className={`text-xl font-bold mt-0.5 ${overdueOrders.length > 0 ? "text-rose-700 print:text-black font-extrabold" : "text-foreground print:text-black"}`}
+                >
                   {overdueOrders.length}
                 </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">Urgent Priority</span>
-                <p className="text-xl font-bold text-rose-700 print:text-black mt-0.5">{urgentOrders.length}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  Urgent Priority
+                </span>
+                <p className="text-xl font-bold text-rose-700 print:text-black mt-0.5">
+                  {urgentOrders.length}
+                </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">At Risk</span>
-                <p className="text-xl font-bold text-amber-700 print:text-black mt-0.5">{atRiskOrders.length}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  At Risk
+                </span>
+                <p className="text-xl font-bold text-amber-700 print:text-black mt-0.5">
+                  {atRiskOrders.length}
+                </p>
               </div>
               <div className="rounded-xl border border-border print:border-black p-3 bg-secondary/10 print:bg-white">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">Deposit Pending</span>
-                <p className="text-xl font-bold text-amber-700 print:text-black mt-0.5">{paymentBlockedOrders.length}</p>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground print:text-black">
+                  Deposit Pending
+                </span>
+                <p className="text-xl font-bold text-amber-700 print:text-black mt-0.5">
+                  {paymentBlockedOrders.length}
+                </p>
               </div>
             </div>
           </div>
@@ -418,7 +460,9 @@ export function DailyManagementSummaryModal({
                           {w.utilizationPercent.toFixed(1)}%
                         </td>
                         <td className="py-2 px-3">
-                          <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${w.badgeClass} print:border-black print:text-black`}>
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${w.badgeClass} print:border-black print:text-black`}
+                          >
                             {w.stateLabel}
                           </span>
                         </td>
@@ -429,11 +473,13 @@ export function DailyManagementSummaryModal({
               </div>
             )}
 
-            {(staffSummary.unassignedBakersCount > 0 || staffSummary.unassignedDecoratorsCount > 0) && (
+            {(staffSummary.unassignedBakersCount > 0 ||
+              staffSummary.unassignedDecoratorsCount > 0) && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 print:bg-neutral-50 print:border-black p-2.5 text-xs text-amber-900 dark:text-amber-200 print:text-black font-medium flex items-center justify-between">
                 <span>⚠️ Unassigned Kitchen Roles on {currentDateYMD}:</span>
                 <span className="font-bold">
-                  {staffSummary.unassignedBakersCount} Bake task(s) unassigned • {staffSummary.unassignedDecoratorsCount} Decorate task(s) unassigned
+                  {staffSummary.unassignedBakersCount} Bake task(s) unassigned •{" "}
+                  {staffSummary.unassignedDecoratorsCount} Decorate task(s) unassigned
                 </span>
               </div>
             )}
@@ -447,7 +493,9 @@ export function DailyManagementSummaryModal({
                 🥣 Baking Station Tasks ({dayBakingTasks.length})
               </h5>
               {dayBakingTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-2">No baking tasks scheduled for this date.</p>
+                <p className="text-xs text-muted-foreground italic py-2">
+                  No baking tasks scheduled for this date.
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
@@ -464,16 +512,30 @@ export function DailyManagementSummaryModal({
                     <tbody className="divide-y divide-border/40 print:divide-black/30 font-mono">
                       {dayBakingTasks.map((o) => {
                         const readiness = getProductionReadiness(o);
-                        const baker = o.assigned_baker_id ? getStaffDisplayName(staffMap.get(o.assigned_baker_id)) : "Unassigned";
+                        const baker = o.assigned_baker_id
+                          ? getStaffDisplayName(staffMap.get(o.assigned_baker_id))
+                          : "Unassigned";
                         return (
                           <tr key={o.id}>
-                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">#{o.id.slice(0, 8).toUpperCase()}</td>
-                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">{o.customer_name}</td>
-                            <td className="py-1.5 px-2 uppercase font-bold">{o.production_priority || "NORMAL"}</td>
-                            <td className="py-1.5 px-2">{o.complexity_units ? `${Number(o.complexity_units).toFixed(1)}u` : "—"}</td>
+                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">
+                              #{o.id.slice(0, 8).toUpperCase()}
+                            </td>
+                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">
+                              {o.customer_name}
+                            </td>
+                            <td className="py-1.5 px-2 uppercase font-bold">
+                              {o.production_priority || "NORMAL"}
+                            </td>
+                            <td className="py-1.5 px-2">
+                              {o.complexity_units
+                                ? `${Number(o.complexity_units).toFixed(1)}u`
+                                : "—"}
+                            </td>
                             <td className="py-1.5 px-2 font-sans">{baker}</td>
                             <td className="py-1.5 px-2 font-sans">
-                              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}>
+                              <span
+                                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}
+                              >
                                 {readiness.label}
                               </span>
                             </td>
@@ -492,7 +554,9 @@ export function DailyManagementSummaryModal({
                 ✨ Decorating Station Tasks ({dayDecoratingTasks.length})
               </h5>
               {dayDecoratingTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-2">No decorating tasks scheduled for this date.</p>
+                <p className="text-xs text-muted-foreground italic py-2">
+                  No decorating tasks scheduled for this date.
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
@@ -509,16 +573,30 @@ export function DailyManagementSummaryModal({
                     <tbody className="divide-y divide-border/40 print:divide-black/30 font-mono">
                       {dayDecoratingTasks.map((o) => {
                         const readiness = getProductionReadiness(o);
-                        const decorator = o.assigned_decorator_id ? getStaffDisplayName(staffMap.get(o.assigned_decorator_id)) : "Unassigned";
+                        const decorator = o.assigned_decorator_id
+                          ? getStaffDisplayName(staffMap.get(o.assigned_decorator_id))
+                          : "Unassigned";
                         return (
                           <tr key={o.id}>
-                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">#{o.id.slice(0, 8).toUpperCase()}</td>
-                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">{o.customer_name}</td>
-                            <td className="py-1.5 px-2 uppercase font-bold">{o.production_priority || "NORMAL"}</td>
-                            <td className="py-1.5 px-2">{o.complexity_units ? `${Number(o.complexity_units).toFixed(1)}u` : "—"}</td>
+                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">
+                              #{o.id.slice(0, 8).toUpperCase()}
+                            </td>
+                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">
+                              {o.customer_name}
+                            </td>
+                            <td className="py-1.5 px-2 uppercase font-bold">
+                              {o.production_priority || "NORMAL"}
+                            </td>
+                            <td className="py-1.5 px-2">
+                              {o.complexity_units
+                                ? `${Number(o.complexity_units).toFixed(1)}u`
+                                : "—"}
+                            </td>
                             <td className="py-1.5 px-2 font-sans">{decorator}</td>
                             <td className="py-1.5 px-2 font-sans">
-                              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}>
+                              <span
+                                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}
+                              >
                                 {readiness.label}
                               </span>
                             </td>
@@ -537,7 +615,9 @@ export function DailyManagementSummaryModal({
                 📦 Dispatch / Pickup Queue ({dayDispatchTasks.length})
               </h5>
               {dayDispatchTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-2">No orders staged for pickup on this date.</p>
+                <p className="text-xs text-muted-foreground italic py-2">
+                  No orders staged for pickup on this date.
+                </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
@@ -560,11 +640,19 @@ export function DailyManagementSummaryModal({
                         const balanceDue = quoted > 0 ? Math.max(0, quoted - paid) : 0;
                         return (
                           <tr key={o.id}>
-                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">#{o.id.slice(0, 8).toUpperCase()}</td>
-                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">{o.customer_name}</td>
-                            <td className="py-1.5 px-2 font-bold">{o.target_pickup_time ? o.target_pickup_time.slice(0, 5) : "Flexible"}</td>
+                            <td className="py-1.5 px-2 font-bold text-primary print:text-black">
+                              #{o.id.slice(0, 8).toUpperCase()}
+                            </td>
+                            <td className="py-1.5 px-2 font-sans font-medium text-foreground print:text-black">
+                              {o.customer_name}
+                            </td>
+                            <td className="py-1.5 px-2 font-bold">
+                              {o.target_pickup_time ? o.target_pickup_time.slice(0, 5) : "Flexible"}
+                            </td>
                             <td className="py-1.5 px-2 font-sans">
-                              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium border ${paymentInfo.badgeClass} print:border-black print:text-black`}>
+                              <span
+                                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium border ${paymentInfo.badgeClass} print:border-black print:text-black`}
+                              >
                                 {paymentInfo.label}
                               </span>
                             </td>
@@ -572,7 +660,9 @@ export function DailyManagementSummaryModal({
                               {balanceDue > 0 ? formatLKR(balanceDue) : "Cleared (LKR 0)"}
                             </td>
                             <td className="py-1.5 px-2 font-sans">
-                              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}>
+                              <span
+                                className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass} print:border-black print:text-black`}
+                              >
                                 {readiness.label}
                               </span>
                             </td>

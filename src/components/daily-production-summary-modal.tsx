@@ -95,7 +95,9 @@ export function DailyProductionSummaryModal({
         o.scheduled_decorate_date === displayDate ||
         o.event_date === displayDate ||
         s === "in_baking" ||
-        (s === "accepted" && (!o.scheduled_bake_date || o.scheduled_bake_date <= displayDate) && o.event_date <= displayDate)
+        (s === "accepted" &&
+          (!o.scheduled_bake_date || o.scheduled_bake_date <= displayDate) &&
+          o.event_date <= displayDate)
       );
     });
   }, [orders, displayDate]);
@@ -253,7 +255,9 @@ export function DailyProductionSummaryModal({
                   : `${capacityResult.committedWorkloadUnits.toFixed(1)} / ${capacityResult.maxCapacityUnits.toFixed(1)} units (${capacityResult.utilizationPercent.toFixed(0)}% used • ${capacityResult.remainingUnits.toFixed(1)}u remaining)`}
               </p>
             </div>
-            <span className={`inline-block rounded-full px-2.5 py-0.5 font-bold border ${capacityResult.badgeClass}`}>
+            <span
+              className={`inline-block rounded-full px-2.5 py-0.5 font-bold border ${capacityResult.badgeClass}`}
+            >
               {capacityResult.stateLabel}
             </span>
           </div>
@@ -317,7 +321,10 @@ export function DailyProductionSummaryModal({
                     const riskInfo = getAtRiskInfo(order, displayDate);
 
                     return (
-                      <tr key={order.id} className="hover:bg-muted/20 break-inside-avoid page-break-inside-avoid">
+                      <tr
+                        key={order.id}
+                        className="hover:bg-muted/20 break-inside-avoid page-break-inside-avoid"
+                      >
                         <td className="py-3 px-3 font-mono font-bold align-top">
                           <div className="text-primary">#{shortId}</div>
                           {order.production_priority && order.production_priority !== "normal" && (
@@ -357,8 +364,12 @@ export function DailyProductionSummaryModal({
                           </div>
                         </td>
                         <td className="py-3 px-3 align-top font-mono text-muted-foreground whitespace-nowrap space-y-0.5 text-[11px]">
-                          {order.scheduled_bake_date && <div>Bake: {order.scheduled_bake_date}</div>}
-                          {order.scheduled_decorate_date && <div>Decor: {order.scheduled_decorate_date}</div>}
+                          {order.scheduled_bake_date && (
+                            <div>Bake: {order.scheduled_bake_date}</div>
+                          )}
+                          {order.scheduled_decorate_date && (
+                            <div>Decor: {order.scheduled_decorate_date}</div>
+                          )}
                           {order.target_pickup_time && (
                             <div className="font-bold text-foreground">
                               Pickup: {order.target_pickup_time.slice(0, 5)}

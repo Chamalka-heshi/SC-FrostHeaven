@@ -1,7 +1,7 @@
 /**
  * SC FrostHeaven — Kitchen Capacity Calculation & Management Utilities
  * Phase 7D Implementation
- * 
+ *
  * Provides pure, timezone-safe mathematical models for:
  * - Activity-based station workload allocation (Same-day single count, multi-day distinct allocation)
  * - Committed production workload vs tentative pipeline segregation
@@ -33,11 +33,7 @@ export interface CapacityOrderInput {
   customer_name?: string | undefined;
 }
 
-export type CapacityState =
-  | "within_capacity"
-  | "near_capacity"
-  | "over_capacity"
-  | "blackout";
+export type CapacityState = "within_capacity" | "near_capacity" | "over_capacity" | "blackout";
 
 export interface DailyCapacityResult {
   dateYMD: string;
@@ -111,7 +107,7 @@ export function sanitizeComplexityUnits(units: number | null | undefined): numbe
 
 /**
  * Calculates complete daily capacity metrics for a specific calendar date (YYYY-MM-DD).
- * 
+ *
  * Rules enforced:
  * 1. Activity-Based Station Allocation:
  *    - Order with Bake Mon, Decorate Tue (2.0u) -> Mon: 2.0u Bake, Tue: 2.0u Decorate.
@@ -131,7 +127,7 @@ export function calculateDailyCapacity(
   dateYMD: string,
   orders: CapacityOrderInput[],
   capacitySettings: KitchenCapacitySetting[],
-  blackoutDates: BakeryBlackoutDate[]
+  blackoutDates: BakeryBlackoutDate[],
 ): DailyCapacityResult {
   const dayOfWeek = getLocalDayOfWeek(dateYMD);
 
@@ -144,13 +140,17 @@ export function calculateDailyCapacity(
   let maxCapacityUnits = 0;
   if (!isBlackout) {
     const setting = capacitySettings.find((s) => s.day_of_week === dayOfWeek);
-    maxCapacityUnits = setting && setting.max_capacity_units > 0
-      ? Number(setting.max_capacity_units)
-      : DEFAULT_WEEKDAY_CAPACITY_FALLBACK;
+    maxCapacityUnits =
+      setting && setting.max_capacity_units > 0
+        ? Number(setting.max_capacity_units)
+        : DEFAULT_WEEKDAY_CAPACITY_FALLBACK;
   }
 
   // 3. Process committed orders scheduled on this date
-  const committedOrdersOnDate = new Map<string, { order: CapacityOrderInput; validComplexity: number | null }>();
+  const committedOrdersOnDate = new Map<
+    string,
+    { order: CapacityOrderInput; validComplexity: number | null }
+  >();
   let bakeTaskCount = 0;
   let bakeWorkloadUnits = 0;
   let decorateTaskCount = 0;
@@ -158,7 +158,10 @@ export function calculateDailyCapacity(
   let invalidComplexityOrderCount = 0;
 
   // Separate tracking for tentative pipeline
-  const tentativeOrdersOnDate = new Map<string, { order: CapacityOrderInput; validComplexity: number | null }>();
+  const tentativeOrdersOnDate = new Map<
+    string,
+    { order: CapacityOrderInput; validComplexity: number | null }
+  >();
 
   for (const order of orders) {
     const isBakeOnDate = order.scheduled_bake_date === dateYMD;
@@ -244,9 +247,8 @@ export function calculateDailyCapacity(
     }
   } else {
     remainingUnits = Math.round((maxCapacityUnits - committedWorkloadUnits) * 10) / 10;
-    utilizationPercent = maxCapacityUnits > 0
-      ? (committedWorkloadUnits / maxCapacityUnits) * 100
-      : 0;
+    utilizationPercent =
+      maxCapacityUnits > 0 ? (committedWorkloadUnits / maxCapacityUnits) * 100 : 0;
 
     if (utilizationPercent > 100) {
       state = "over_capacity";
@@ -256,7 +258,8 @@ export function calculateDailyCapacity(
     } else if (utilizationPercent > 80) {
       state = "near_capacity";
       stateLabel = "Near Capacity";
-      badgeClass = "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold";
+      badgeClass =
+        "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold";
       progressBarClass = "bg-amber-500";
     } else {
       state = "within_capacity";
@@ -302,7 +305,7 @@ export function previewScheduleImpact(
   complexityUnits: number,
   allOrders: CapacityOrderInput[],
   capacitySettings: KitchenCapacitySetting[],
-  blackoutDates: BakeryBlackoutDate[]
+  blackoutDates: BakeryBlackoutDate[],
 ): {
   currentWorkload: number;
   newWorkload: number;
@@ -320,7 +323,7 @@ export function previewScheduleImpact(
     targetDateYMD,
     allOrders,
     capacitySettings,
-    blackoutDates
+    blackoutDates,
   );
 
   const currentWorkload = currentResult.committedWorkloadUnits;
@@ -331,7 +334,7 @@ export function previewScheduleImpact(
     (o) =>
       o.id === orderIdToSchedule &&
       isCommittedProductionStatus(o.status) &&
-      (o.scheduled_bake_date === targetDateYMD || o.scheduled_decorate_date === targetDateYMD)
+      (o.scheduled_bake_date === targetDateYMD || o.scheduled_decorate_date === targetDateYMD),
   );
 
   const newWorkload = isAlreadyOnDate
@@ -354,9 +357,9 @@ export function previewScheduleImpact(
   } else if (isOverCapacity) {
     requiresConfirmation = true;
     warningMessage = `Workload Notice: Scheduling this order increases ${targetDateYMD} workload to ${newWorkload.toFixed(
-      1
+      1,
     )} / ${maxCapacity.toFixed(1)} units (${newUtilization.toFixed(
-      1
+      1,
     )}% utilization — ${overageUnits.toFixed(1)} units over capacity).`;
   }
 

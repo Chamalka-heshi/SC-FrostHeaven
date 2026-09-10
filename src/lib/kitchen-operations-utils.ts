@@ -1,7 +1,7 @@
 /**
  * SC FrostHeaven — Kitchen Operations Integration Utilities
  * Phase 7F Implementation
- * 
+ *
  * Pure, timezone-safe models and helpers for:
  * - Deterministic Overdue detection and classification (Overdue Production vs Overdue Handover)
  * - Deterministic At-Risk order identification with explicit blocker reasons
@@ -114,7 +114,10 @@ export function getDayDifference(ymdA: string, ymdB: string): number {
  * An order is overdue if its event_date is strictly prior to today's local date
  * AND its status is not a terminal state (completed, declined, cancelled).
  */
-export function getOverdueInfo(order: KitchenOrderInput, todayStr: string = getLocalDateString()): OverdueInfo {
+export function getOverdueInfo(
+  order: KitchenOrderInput,
+  todayStr: string = getLocalDateString(),
+): OverdueInfo {
   const statusLower = (order.status || "").toLowerCase().trim();
   const terminal = ["completed", "declined", "cancelled"];
 
@@ -193,7 +196,7 @@ export function getAtRiskInfo(
   order: KitchenOrderInput,
   todayStr: string = getLocalDateString(),
   tomorrowStr?: string,
-  options?: AtRiskOptions
+  options?: AtRiskOptions,
 ): AtRiskInfo {
   const statusLower = (order.status || "").toLowerCase().trim();
   const terminal = ["completed", "declined", "cancelled"];
@@ -212,7 +215,7 @@ export function getAtRiskInfo(
         parseInt(parts[2] || "1", 10) + 1,
         12,
         0,
-        0
+        0,
       );
       return getLocalDateString(d);
     })();
@@ -274,13 +277,20 @@ export function getAtRiskInfo(
     if (order.assigned_baker_id && options.overloadedStaffIds.has(order.assigned_baker_id)) {
       reasons.push("Assigned Baker Overloaded");
     }
-    if (order.assigned_decorator_id && options.overloadedStaffIds.has(order.assigned_decorator_id)) {
+    if (
+      order.assigned_decorator_id &&
+      options.overloadedStaffIds.has(order.assigned_decorator_id)
+    ) {
       reasons.push("Assigned Decorator Overloaded");
     }
   }
 
   if (reasons.length > 0) {
-    const isHigh = isImminent && (reasons.includes("Missing Bake Date") || reasons.includes("Unassigned Baker") || isPaymentBlocked);
+    const isHigh =
+      isImminent &&
+      (reasons.includes("Missing Bake Date") ||
+        reasons.includes("Unassigned Baker") ||
+        isPaymentBlocked);
     return {
       isAtRisk: true,
       reasons,
@@ -297,23 +307,23 @@ export function getAtRiskInfo(
 
 /**
  * Workstation Routing Rules (Purely Derived):
- * 
+ *
  * 1. Baking Station:
  *    - scheduled_bake_date === selectedDate
  *    - OR status === 'in_baking' (active in oven/station)
  *    - Excludes terminal orders and ready orders.
- * 
+ *
  * 2. Decorating Station:
  *    - scheduled_decorate_date === selectedDate
  *    - Excludes terminal orders and ready orders.
- * 
+ *
  * 3. Dispatch / Pickup:
  *    - status === 'ready'
  *    - Especially where event_date === selectedDate or awaiting handover.
  */
 export function isBakingTaskForDate(
   order: KitchenOrderInput,
-  selectedDate: string = getLocalDateString()
+  selectedDate: string = getLocalDateString(),
 ): boolean {
   const statusLower = (order.status || "").toLowerCase().trim();
   const terminal = ["completed", "declined", "cancelled", "ready"];
@@ -322,7 +332,12 @@ export function isBakingTaskForDate(
   if (order.scheduled_bake_date === selectedDate) return true;
   if (statusLower === "in_baking") return true;
   // Fallback if unscheduled: accepted with event_date <= selectedDate
-  if (statusLower === "accepted" && !order.scheduled_bake_date && order.event_date && order.event_date <= selectedDate) {
+  if (
+    statusLower === "accepted" &&
+    !order.scheduled_bake_date &&
+    order.event_date &&
+    order.event_date <= selectedDate
+  ) {
     return true;
   }
   return false;
@@ -330,7 +345,7 @@ export function isBakingTaskForDate(
 
 export function isDecoratingTaskForDate(
   order: KitchenOrderInput,
-  selectedDate: string = getLocalDateString()
+  selectedDate: string = getLocalDateString(),
 ): boolean {
   const statusLower = (order.status || "").toLowerCase().trim();
   const terminal = ["completed", "declined", "cancelled", "ready"];
@@ -341,21 +356,21 @@ export function isDecoratingTaskForDate(
   if (
     statusLower === "in_baking" &&
     !order.scheduled_decorate_date &&
-    (order.scheduled_bake_date === selectedDate || (!order.scheduled_bake_date && order.event_date <= selectedDate))
+    (order.scheduled_bake_date === selectedDate ||
+      (!order.scheduled_bake_date && order.event_date <= selectedDate))
   ) {
     return true;
   }
   return false;
 }
 
-export function isDispatchTaskForDate(
-  order: KitchenOrderInput,
-  selectedDate?: string
-): boolean {
+export function isDispatchTaskForDate(order: KitchenOrderInput, selectedDate?: string): boolean {
   const statusLower = (order.status || "").toLowerCase().trim();
   if (statusLower !== "ready") return false;
   if (!selectedDate) return true;
-  return Boolean(order.event_date === selectedDate || (order.event_date && order.event_date <= selectedDate));
+  return Boolean(
+    order.event_date === selectedDate || (order.event_date && order.event_date <= selectedDate),
+  );
 }
 
 /**
@@ -364,7 +379,7 @@ export function isDispatchTaskForDate(
 export function formatProductionDuration(
   startedAt?: string | null | undefined,
   completedAt?: string | null | undefined,
-  nowTimestamp: number = Date.now()
+  nowTimestamp: number = Date.now(),
 ): ProductionDurationInfo {
   if (!startedAt) {
     return {

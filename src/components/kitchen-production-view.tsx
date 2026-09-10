@@ -191,7 +191,11 @@ export function KitchenProductionView({
       const paid = Number(o.amount_paid_lkr || 0);
       const balanceDue = quoted > 0 ? Math.max(0, quoted - paid) : 0;
       const paymentInfo = getPaymentBadgeInfo(o);
-      const durationInfo = formatProductionDuration(o.production_started_at, o.production_completed_at, nowTime);
+      const durationInfo = formatProductionDuration(
+        o.production_started_at,
+        o.production_completed_at,
+        nowTime,
+      );
       const overdueInfo = getOverdueInfo(o, todayStr);
       const riskInfo = getAtRiskInfo(o, todayStr, tomorrowStr);
 
@@ -199,8 +203,12 @@ export function KitchenProductionView({
       if (overdueInfo.isOverdue) operationalFlag = overdueInfo.label;
       else if (riskInfo.isAtRisk) operationalFlag = riskInfo.label;
 
-      const bakerName = o.assigned_baker_id ? getStaffDisplayName(staffMap.get(o.assigned_baker_id)) : "Unassigned";
-      const decoratorName = o.assigned_decorator_id ? getStaffDisplayName(staffMap.get(o.assigned_decorator_id)) : "Unassigned";
+      const bakerName = o.assigned_baker_id
+        ? getStaffDisplayName(staffMap.get(o.assigned_baker_id))
+        : "Unassigned";
+      const decoratorName = o.assigned_decorator_id
+        ? getStaffDisplayName(staffMap.get(o.assigned_decorator_id))
+        : "Unassigned";
 
       return [
         o.id,
@@ -239,13 +247,7 @@ export function KitchenProductionView({
   };
 
   // Categorize orders into kitchen sections, metrics, and queues
-  const {
-    bakingToday,
-    readyToday,
-    tomorrowOrders,
-    upcomingThisWeek,
-    metrics,
-  } = useMemo(() => {
+  const { bakingToday, readyToday, tomorrowOrders, upcomingThisWeek, metrics } = useMemo(() => {
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     const nextWeekStr = getLocalDateString(nextWeek);
@@ -292,12 +294,17 @@ export function KitchenProductionView({
         totalWorkloadUnits += Number(order.complexity_units || 1.0);
       }
 
-      if (currentUserId && (order.assigned_baker_id === currentUserId || order.assigned_decorator_id === currentUserId)) {
+      if (
+        currentUserId &&
+        (order.assigned_baker_id === currentUserId || order.assigned_decorator_id === currentUserId)
+      ) {
         myWorkCount++;
       }
 
       const hasBaker = Boolean(order.assigned_baker_id && order.assigned_baker_id.trim());
-      const hasDecorator = Boolean(order.assigned_decorator_id && order.assigned_decorator_id.trim());
+      const hasDecorator = Boolean(
+        order.assigned_decorator_id && order.assigned_decorator_id.trim(),
+      );
       if (!hasBaker || !hasDecorator) {
         unassignedStaffCount++;
       }
@@ -383,11 +390,16 @@ export function KitchenProductionView({
     if (selectedStaffFilter !== "all") {
       if (selectedStaffFilter === "unassigned") {
         const hasBaker = Boolean(order.assigned_baker_id && order.assigned_baker_id.trim());
-        const hasDecorator = Boolean(order.assigned_decorator_id && order.assigned_decorator_id.trim());
+        const hasDecorator = Boolean(
+          order.assigned_decorator_id && order.assigned_decorator_id.trim(),
+        );
         if (hasBaker && hasDecorator) return false;
       } else if (selectedStaffFilter === "my_work") {
         if (!currentUserId) return false;
-        if (order.assigned_baker_id !== currentUserId && order.assigned_decorator_id !== currentUserId) {
+        if (
+          order.assigned_baker_id !== currentUserId &&
+          order.assigned_decorator_id !== currentUserId
+        ) {
           return false;
         }
       } else {
@@ -435,22 +447,37 @@ export function KitchenProductionView({
     if (activeFilter === "my_work") {
       return Boolean(
         currentUserId &&
-          (order.assigned_baker_id === currentUserId || order.assigned_decorator_id === currentUserId)
+        (order.assigned_baker_id === currentUserId ||
+          order.assigned_decorator_id === currentUserId),
       );
     }
     if (activeFilter === "unassigned_staff") {
       const hasBaker = Boolean(order.assigned_baker_id && order.assigned_baker_id.trim());
-      const hasDecorator = Boolean(order.assigned_decorator_id && order.assigned_decorator_id.trim());
+      const hasDecorator = Boolean(
+        order.assigned_decorator_id && order.assigned_decorator_id.trim(),
+      );
       return !hasBaker || !hasDecorator;
     }
 
     return true;
   };
 
-  const filteredBakingToday = useMemo(() => bakingToday.filter(filterOrder), [bakingToday, activeFilter, selectedStaffFilter]);
-  const filteredReadyToday = useMemo(() => readyToday.filter(filterOrder), [readyToday, activeFilter, selectedStaffFilter]);
-  const filteredTomorrowOrders = useMemo(() => tomorrowOrders.filter(filterOrder), [tomorrowOrders, activeFilter, selectedStaffFilter]);
-  const filteredUpcomingThisWeek = useMemo(() => upcomingThisWeek.filter(filterOrder), [upcomingThisWeek, activeFilter, selectedStaffFilter]);
+  const filteredBakingToday = useMemo(
+    () => bakingToday.filter(filterOrder),
+    [bakingToday, activeFilter, selectedStaffFilter],
+  );
+  const filteredReadyToday = useMemo(
+    () => readyToday.filter(filterOrder),
+    [readyToday, activeFilter, selectedStaffFilter],
+  );
+  const filteredTomorrowOrders = useMemo(
+    () => tomorrowOrders.filter(filterOrder),
+    [tomorrowOrders, activeFilter, selectedStaffFilter],
+  );
+  const filteredUpcomingThisWeek = useMemo(
+    () => upcomingThisWeek.filter(filterOrder),
+    [upcomingThisWeek, activeFilter, selectedStaffFilter],
+  );
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "N/A";
@@ -485,7 +512,11 @@ export function KitchenProductionView({
 
     const overdueInfo = getOverdueInfo(order, todayStr);
     const riskInfo = getAtRiskInfo(order, todayStr, tomorrowStr);
-    const durationInfo = formatProductionDuration(order.production_started_at, order.production_completed_at, nowTime);
+    const durationInfo = formatProductionDuration(
+      order.production_started_at,
+      order.production_completed_at,
+      nowTime,
+    );
 
     return (
       <div
@@ -529,7 +560,9 @@ export function KitchenProductionView({
 
           {/* Overdue Alert Banner */}
           {overdueInfo.isOverdue && (
-            <div className={`rounded-2xl p-2.5 text-xs flex items-center justify-between gap-2 border ${overdueInfo.badgeClass}`}>
+            <div
+              className={`rounded-2xl p-2.5 text-xs flex items-center justify-between gap-2 border ${overdueInfo.badgeClass}`}
+            >
               <span className="font-bold flex items-center gap-1.5">
                 <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
                 {overdueInfo.label}
@@ -645,7 +678,9 @@ export function KitchenProductionView({
                 <span>Started: {durationInfo.formattedStartTime}</span>
               </span>
               <span className="font-semibold text-foreground">
-                {durationInfo.hasCompleted ? `Finished (${durationInfo.formattedDuration})` : `In Station: ${durationInfo.formattedDuration}`}
+                {durationInfo.hasCompleted
+                  ? `Finished (${durationInfo.formattedDuration})`
+                  : `In Station: ${durationInfo.formattedDuration}`}
               </span>
             </div>
           )}
@@ -655,7 +690,9 @@ export function KitchenProductionView({
         <div className="rounded-2xl bg-secondary/40 p-3 border border-border/70 space-y-1.5 text-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span>Quoted:</span>
-            <span className="font-semibold text-foreground">{formatLKR(order.quoted_price_lkr)}</span>
+            <span className="font-semibold text-foreground">
+              {formatLKR(order.quoted_price_lkr)}
+            </span>
           </div>
           {deposit > 0 && (
             <div className="flex items-center justify-between text-muted-foreground">
@@ -680,7 +717,11 @@ export function KitchenProductionView({
           {quoted > 0 && (
             <div className="flex items-center justify-between pt-1 border-t border-border/50 text-[11px] font-medium">
               <span className="text-muted-foreground">Outstanding Due:</span>
-              <span className={balanceDue > 0 ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"}>
+              <span
+                className={
+                  balanceDue > 0 ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"
+                }
+              >
                 {balanceDue > 0 ? formatLKR(balanceDue) : "Cleared (LKR 0)"}
               </span>
             </div>
@@ -697,7 +738,8 @@ export function KitchenProductionView({
           <div className="rounded-2xl bg-amber-500/10 p-2.5 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold">Deposit Pending:</span> Customer confirmed, but required deposit ({formatLKR(deposit)}) has not cleared.
+              <span className="font-semibold">Deposit Pending:</span> Customer confirmed, but
+              required deposit ({formatLKR(deposit)}) has not cleared.
             </div>
           </div>
         )}
@@ -722,7 +764,11 @@ export function KitchenProductionView({
                 onClick={() => onUpdateStatus(order.id, "in_baking")}
                 disabled={isUpdating}
                 className="rounded-full bg-purple-600 hover:bg-purple-700 text-white text-xs h-8 px-3 gap-1 cursor-pointer"
-                title={isAwaitingDeposit ? "Start baking (Deposit is still pending)" : "Start baking in kitchen"}
+                title={
+                  isAwaitingDeposit
+                    ? "Start baking (Deposit is still pending)"
+                    : "Start baking in kitchen"
+                }
               >
                 {isUpdating ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -799,7 +845,8 @@ export function KitchenProductionView({
         <div>
           <h2 className="text-xl font-bold text-foreground">Kitchen Operations Workspace</h2>
           <p className="text-xs text-muted-foreground">
-            Live workstation queues, production timestamps, priority dispatch, and payment-aware readiness
+            Live workstation queues, production timestamps, priority dispatch, and payment-aware
+            readiness
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -861,7 +908,9 @@ export function KitchenProductionView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${todayCapacity.badgeClass}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${todayCapacity.badgeClass}`}
+          >
             {todayCapacity.stateLabel}
           </span>
           {metrics.overdueCount > 0 && (

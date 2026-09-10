@@ -85,7 +85,7 @@ export function KitchenProductionTicket({
   const durationInfo = formatProductionDuration(
     order.production_started_at,
     order.production_completed_at,
-    Date.now()
+    Date.now(),
   );
 
   const quoted = Number(order.quoted_price_lkr || 0);
@@ -226,25 +226,39 @@ export function KitchenProductionTicket({
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div>
-                <span className="text-muted-foreground print:text-black font-medium">Bake Date:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Bake Date:
+                </span>
                 <p className="font-bold text-foreground print:text-black">
-                  {order.scheduled_bake_date ? formatDate(order.scheduled_bake_date) : "Unscheduled"}
+                  {order.scheduled_bake_date
+                    ? formatDate(order.scheduled_bake_date)
+                    : "Unscheduled"}
                 </p>
               </div>
               <div>
-                <span className="text-muted-foreground print:text-black font-medium">Decorate Date:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Decorate Date:
+                </span>
                 <p className="font-bold text-foreground print:text-black">
-                  {order.scheduled_decorate_date ? formatDate(order.scheduled_decorate_date) : "Unscheduled"}
+                  {order.scheduled_decorate_date
+                    ? formatDate(order.scheduled_decorate_date)
+                    : "Unscheduled"}
                 </p>
               </div>
               <div>
-                <span className="text-muted-foreground print:text-black font-medium">Target Pickup:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Target Pickup:
+                </span>
                 <p className="font-bold text-foreground print:text-black font-mono">
-                  {order.target_pickup_time ? order.target_pickup_time.slice(0, 5) : "Not Specified"}
+                  {order.target_pickup_time
+                    ? order.target_pickup_time.slice(0, 5)
+                    : "Not Specified"}
                 </p>
               </div>
               <div>
-                <span className="text-muted-foreground print:text-black font-medium">Complexity:</span>
+                <span className="text-muted-foreground print:text-black font-medium">
+                  Complexity:
+                </span>
                 <p className="font-bold text-foreground print:text-black">
                   ⚡ {Number(order.complexity_units || 1.0).toFixed(1)} units
                 </p>

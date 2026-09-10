@@ -229,10 +229,7 @@ function AdminAnalyticsPage() {
           .from("profiles")
           .select("id, full_name, email, phone, city, role, created_at")
           .eq("role", "customer"),
-        supabase
-          .from("profiles")
-          .select("id, full_name, email, role")
-          .eq("role", "admin"),
+        supabase.from("profiles").select("id, full_name, email, role").eq("role", "admin"),
         supabase
           .from("kitchen_capacity_settings")
           .select("id, day_of_week, max_capacity_units")
@@ -319,7 +316,7 @@ function AdminAnalyticsPage() {
 
       if (!TERMINAL_STATUSES.includes(statusLower)) {
         if (quoted > paid) {
-          totalOutstandingLkr += (quoted - paid);
+          totalOutstandingLkr += quoted - paid;
         }
       }
 
@@ -403,7 +400,7 @@ function AdminAnalyticsPage() {
       orders,
       capacitySettings,
       blackoutDates,
-      todayStr
+      todayStr,
     );
   }, [orders, capacitySettings, blackoutDates, todayStr]);
 
@@ -578,34 +575,149 @@ function AdminAnalyticsPage() {
   const handleExportAnalyticsSummary = () => {
     const headers = ["Metric Category", "Metric Name", "Metric Value", "Calculation Details"];
     const rows: (string | number)[][] = [
-      ["Financials", "Total Funds Collected (Custom Orders)", formatLKR(kpis.totalCollectedLkr), "Verified customer payments recorded"],
-      ["Financials", "Total Quoted Pipeline", formatLKR(kpis.totalQuotedLkr), "Cumulative quoted custom order value"],
-      ["Financials", "Active Outstanding Balance", formatLKR(kpis.totalOutstandingLkr), "Uncollected balance across active custom orders"],
-      ["Financials", "Deposit Clearance Rate", `${kpis.depositClearanceRate}%`, "(Deposit/Fully Paid orders / Active payable orders) * 100"],
+      [
+        "Financials",
+        "Total Funds Collected (Custom Orders)",
+        formatLKR(kpis.totalCollectedLkr),
+        "Verified customer payments recorded",
+      ],
+      [
+        "Financials",
+        "Total Quoted Pipeline",
+        formatLKR(kpis.totalQuotedLkr),
+        "Cumulative quoted custom order value",
+      ],
+      [
+        "Financials",
+        "Active Outstanding Balance",
+        formatLKR(kpis.totalOutstandingLkr),
+        "Uncollected balance across active custom orders",
+      ],
+      [
+        "Financials",
+        "Deposit Clearance Rate",
+        `${kpis.depositClearanceRate}%`,
+        "(Deposit/Fully Paid orders / Active payable orders) * 100",
+      ],
       ["Financials", "Fully Paid Orders", kpis.fullyPaidCount, "Orders with full amount received"],
       ["Financials", "Deposit Paid Orders", kpis.depositPaidCount, "Orders with deposit cleared"],
       ["Financials", "Unpaid Orders", kpis.unpaidCount, "Orders without recorded payment"],
       ["Overview", "Total Custom Orders", kpis.totalOrders, "All recorded custom cake requests"],
-      ["Overview", "Active Orders", kpis.activeOrders, "Orders in progress (excluding completed, declined, cancelled)"],
-      ["Overview", "Orders Ready for Pickup", kpis.readyOrders, "Finished cakes awaiting customer collection"],
-      ["Kitchen Operations", "Average Production Duration", kitchenKPIs.averageDuration.formattedAvgDuration, `Calculated across ${kitchenKPIs.averageDuration.validOrdersCount} completed orders with valid start & completion timestamps`],
-      ["Kitchen Operations", "Orders with Valid Production Duration", kitchenKPIs.averageDuration.validOrdersCount, "Orders with both production_started_at and production_completed_at"],
-      ["Kitchen Operations", "Production Completion Rate", kitchenKPIs.completionRate.formattedRate, "Completed orders / Eligible production workflow orders (accepted, in_baking, ready, completed)"],
-      ["Kitchen Operations", "Overdue Orders (Total)", kitchenKPIs.overdueOrdersCount, "Active orders past event date"],
-      ["Kitchen Operations", "Overdue Production", kitchenKPIs.overdueProductionCount, "Accepted or In Baking orders past event date"],
-      ["Kitchen Operations", "Overdue Handover", kitchenKPIs.overdueHandoverCount, "Ready orders past event date awaiting pickup"],
-      ["Kitchen Operations", "Urgent Priority Orders", kitchenKPIs.urgentOrdersCount, "Active orders flagged with urgent production priority"],
-      ["Kitchen Operations", "At-Risk Orders", kitchenKPIs.atRiskOrdersCount, "Active orders imminent within 2 days with scheduling or payment blockers"],
-      ["Kitchen Operations", "Ready for Production", kitchenKPIs.readyForProductionCount, "Accepted orders with deposit cleared ready for oven"],
-      ["Kitchen Operations", "In Baking Station", kitchenKPIs.inBakingCount, "Orders currently in baking station"],
-      ["Kitchen Operations", "Payment Blocked Orders", kitchenKPIs.paymentBlockedCount, "Accepted orders requiring deposit before baking"],
-      ["Customers", "Total Registered Customers", kpis.totalRegisteredCustomers, "Customer accounts in directory"],
-      ["Customers", "Customers With Orders", kpis.customersWithOrders, "Customers with at least 1 custom order"],
-      ["Customers", "Repeat Customer Rate", `${kpis.repeatCustomerRate}%`, "(Customers with >= 2 orders / Customers with >= 1 order) * 100"],
-      ["Reputation", "Average Review Rating (CSAT)", kpis.avgRating ? `${kpis.avgRating} / 5.0` : "N/A", `Based on ${kpis.approvedReviewsCount} approved customer reviews`],
-      ["Communication", "Unread Contact Inquiries", kpis.unreadInquiries, "Pending inquiries in inbox"],
+      [
+        "Overview",
+        "Active Orders",
+        kpis.activeOrders,
+        "Orders in progress (excluding completed, declined, cancelled)",
+      ],
+      [
+        "Overview",
+        "Orders Ready for Pickup",
+        kpis.readyOrders,
+        "Finished cakes awaiting customer collection",
+      ],
+      [
+        "Kitchen Operations",
+        "Average Production Duration",
+        kitchenKPIs.averageDuration.formattedAvgDuration,
+        `Calculated across ${kitchenKPIs.averageDuration.validOrdersCount} completed orders with valid start & completion timestamps`,
+      ],
+      [
+        "Kitchen Operations",
+        "Orders with Valid Production Duration",
+        kitchenKPIs.averageDuration.validOrdersCount,
+        "Orders with both production_started_at and production_completed_at",
+      ],
+      [
+        "Kitchen Operations",
+        "Production Completion Rate",
+        kitchenKPIs.completionRate.formattedRate,
+        "Completed orders / Eligible production workflow orders (accepted, in_baking, ready, completed)",
+      ],
+      [
+        "Kitchen Operations",
+        "Overdue Orders (Total)",
+        kitchenKPIs.overdueOrdersCount,
+        "Active orders past event date",
+      ],
+      [
+        "Kitchen Operations",
+        "Overdue Production",
+        kitchenKPIs.overdueProductionCount,
+        "Accepted or In Baking orders past event date",
+      ],
+      [
+        "Kitchen Operations",
+        "Overdue Handover",
+        kitchenKPIs.overdueHandoverCount,
+        "Ready orders past event date awaiting pickup",
+      ],
+      [
+        "Kitchen Operations",
+        "Urgent Priority Orders",
+        kitchenKPIs.urgentOrdersCount,
+        "Active orders flagged with urgent production priority",
+      ],
+      [
+        "Kitchen Operations",
+        "At-Risk Orders",
+        kitchenKPIs.atRiskOrdersCount,
+        "Active orders imminent within 2 days with scheduling or payment blockers",
+      ],
+      [
+        "Kitchen Operations",
+        "Ready for Production",
+        kitchenKPIs.readyForProductionCount,
+        "Accepted orders with deposit cleared ready for oven",
+      ],
+      [
+        "Kitchen Operations",
+        "In Baking Station",
+        kitchenKPIs.inBakingCount,
+        "Orders currently in baking station",
+      ],
+      [
+        "Kitchen Operations",
+        "Payment Blocked Orders",
+        kitchenKPIs.paymentBlockedCount,
+        "Accepted orders requiring deposit before baking",
+      ],
+      [
+        "Customers",
+        "Total Registered Customers",
+        kpis.totalRegisteredCustomers,
+        "Customer accounts in directory",
+      ],
+      [
+        "Customers",
+        "Customers With Orders",
+        kpis.customersWithOrders,
+        "Customers with at least 1 custom order",
+      ],
+      [
+        "Customers",
+        "Repeat Customer Rate",
+        `${kpis.repeatCustomerRate}%`,
+        "(Customers with >= 2 orders / Customers with >= 1 order) * 100",
+      ],
+      [
+        "Reputation",
+        "Average Review Rating (CSAT)",
+        kpis.avgRating ? `${kpis.avgRating} / 5.0` : "N/A",
+        `Based on ${kpis.approvedReviewsCount} approved customer reviews`,
+      ],
+      [
+        "Communication",
+        "Unread Contact Inquiries",
+        kpis.unreadInquiries,
+        "Pending inquiries in inbox",
+      ],
       ["Communication", "Total Inquiries", kpis.totalInquiries, "All received contact inquiries"],
-      ["Alerts", "Customer Notifications Sent", kpis.totalNotifications, "Automated status alerts generated"],
+      [
+        "Alerts",
+        "Customer Notifications Sent",
+        kpis.totalNotifications,
+        "Automated status alerts generated",
+      ],
     ];
 
     exportToCsv(`frostheaven-analytics-summary-${todayStr}.csv`, headers, rows);
@@ -681,7 +793,8 @@ function AdminAnalyticsPage() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Comprehensive operational reporting, kitchen production capacity, staff allocation, and custom order insights.
+                Comprehensive operational reporting, kitchen production capacity, staff allocation,
+                and custom order insights.
               </p>
             </div>
           </div>
@@ -785,7 +898,9 @@ function AdminAnalyticsPage() {
           {/* Card 1: Average Production Duration */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Average Production Duration</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Average Production Duration
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
                 <Timer className="h-4 w-4" />
               </div>
@@ -805,7 +920,9 @@ function AdminAnalyticsPage() {
           {/* Card 2: Production Completion Rate */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Production Completion Rate</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Production Completion Rate
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
@@ -815,7 +932,8 @@ function AdminAnalyticsPage() {
                 {kitchenKPIs.completionRate.ratePercent}%
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                {kitchenKPIs.completionRate.completedCount} of {kitchenKPIs.completionRate.eligibleCount} eligible production orders
+                {kitchenKPIs.completionRate.completedCount} of{" "}
+                {kitchenKPIs.completionRate.eligibleCount} eligible production orders
               </p>
             </div>
           </div>
@@ -824,12 +942,16 @@ function AdminAnalyticsPage() {
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Overdue Orders</span>
-              <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${kitchenKPIs.overdueOrdersCount > 0 ? "bg-rose-500/20 text-rose-700 font-bold animate-pulse" : "bg-zinc-500/10 text-muted-foreground"}`}>
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-xl ${kitchenKPIs.overdueOrdersCount > 0 ? "bg-rose-500/20 text-rose-700 font-bold animate-pulse" : "bg-zinc-500/10 text-muted-foreground"}`}
+              >
                 <AlertCircle className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-4">
-              <div className={`text-2xl font-bold ${kitchenKPIs.overdueOrdersCount > 0 ? "text-rose-700" : "text-foreground"}`}>
+              <div
+                className={`text-2xl font-bold ${kitchenKPIs.overdueOrdersCount > 0 ? "text-rose-700" : "text-foreground"}`}
+              >
                 {kitchenKPIs.overdueOrdersCount}
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -843,7 +965,9 @@ function AdminAnalyticsPage() {
           {/* Card 4: Urgent Priority Orders */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Urgent Priority Orders</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Urgent Priority Orders
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600">
                 <Flame className="h-4 w-4" />
               </div>
@@ -879,7 +1003,9 @@ function AdminAnalyticsPage() {
           {/* Card 6: Ready for Production */}
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Ready for Production</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Ready for Production
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <ShieldCheck className="h-4 w-4" />
               </div>
@@ -903,9 +1029,7 @@ function AdminAnalyticsPage() {
               </div>
             </div>
             <div className="mt-4">
-              <div className="text-2xl font-bold text-purple-700">
-                {kitchenKPIs.inBakingCount}
-              </div>
+              <div className="text-2xl font-bold text-purple-700">{kitchenKPIs.inBakingCount}</div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 Active cakes currently in oven or decorating station
               </p>
@@ -937,10 +1061,12 @@ function AdminAnalyticsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/50 pb-4">
           <div>
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-teal-600" /> 14-Day Kitchen Workload vs Capacity Horizon
+              <CalendarDays className="h-4 w-4 text-teal-600" /> 14-Day Kitchen Workload vs Capacity
+              Horizon
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Comparison of Event Order Count vs Scheduled Production Workload (Complexity Units) against Configured Daily Kitchen Capacity
+              Comparison of Event Order Count vs Scheduled Production Workload (Complexity Units)
+              against Configured Daily Kitchen Capacity
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -953,10 +1079,7 @@ function AdminAnalyticsPage() {
         {/* 14-Day Visual Chart */}
         <div className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={forecast14Days}
-              margin={{ top: 10, right: 10, left: -20, bottom: 25 }}
-            >
+            <BarChart data={forecast14Days} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
                 vertical={false}
@@ -995,8 +1118,17 @@ function AdminAnalyticsPage() {
                   fontSize: "12px",
                 }}
               />
-              <Bar dataKey="eventOrderCount" name="Event Orders" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="productionWorkloadUnits" name="Production Workload (Units)" radius={[6, 6, 0, 0]}>
+              <Bar
+                dataKey="eventOrderCount"
+                name="Event Orders"
+                fill="#94a3b8"
+                radius={[4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="productionWorkloadUnits"
+                name="Production Workload (Units)"
+                radius={[6, 6, 0, 0]}
+              >
                 {forecast14Days.map((entry, index) => (
                   <Cell
                     key={`cap-bar-${index}`}
@@ -1004,10 +1136,10 @@ function AdminAnalyticsPage() {
                       entry.isBlackout
                         ? "#71717a"
                         : entry.capacityState === "over_capacity"
-                        ? "#f43f5e"
-                        : entry.capacityState === "near_capacity"
-                        ? "#f59e0b"
-                        : "#10b981"
+                          ? "#f43f5e"
+                          : entry.capacityState === "near_capacity"
+                            ? "#f59e0b"
+                            : "#10b981"
                     }
                   />
                 ))}
@@ -1036,14 +1168,25 @@ function AdminAnalyticsPage() {
               {forecast14Days.map((item) => (
                 <tr key={item.dateStr} className="hover:bg-muted/10 font-sans">
                   <td className="py-2 px-3 font-semibold text-foreground">
-                    {item.label} <span className="text-[10px] text-muted-foreground font-mono">({item.dateStr})</span>
+                    {item.label}{" "}
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      ({item.dateStr})
+                    </span>
                   </td>
                   <td className="py-2 px-3 font-mono font-medium">{item.eventOrderCount}</td>
-                  <td className="py-2 px-3 font-mono text-purple-700">{item.bakeWorkloadUnits.toFixed(1)}u</td>
-                  <td className="py-2 px-3 font-mono text-pink-700">{item.decorateWorkloadUnits.toFixed(1)}u</td>
-                  <td className="py-2 px-3 font-mono font-bold text-foreground">{item.productionWorkloadUnits.toFixed(1)}u</td>
+                  <td className="py-2 px-3 font-mono text-purple-700">
+                    {item.bakeWorkloadUnits.toFixed(1)}u
+                  </td>
+                  <td className="py-2 px-3 font-mono text-pink-700">
+                    {item.decorateWorkloadUnits.toFixed(1)}u
+                  </td>
+                  <td className="py-2 px-3 font-mono font-bold text-foreground">
+                    {item.productionWorkloadUnits.toFixed(1)}u
+                  </td>
                   <td className="py-2 px-3 font-mono text-muted-foreground">
-                    {item.isBlackout ? "0.0u (Closed)" : `${item.configuredDailyCapacity.toFixed(1)}u`}
+                    {item.isBlackout
+                      ? "0.0u (Closed)"
+                      : `${item.configuredDailyCapacity.toFixed(1)}u`}
                   </td>
                   <td className="py-2 px-3 font-mono font-semibold">
                     {item.remainingCapacityUnits.toFixed(1)}u
@@ -1052,7 +1195,9 @@ function AdminAnalyticsPage() {
                     {item.utilizationPercent.toFixed(0)}%
                   </td>
                   <td className="py-2 px-3">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${item.badgeClass}`}>
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${item.badgeClass}`}
+                    >
                       {item.capacityStateLabel}
                     </span>
                   </td>
@@ -1068,10 +1213,12 @@ function AdminAnalyticsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/50 pb-4">
           <div>
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-600" /> Today's Staff Allocation & Workload Distribution
+              <Users className="h-4 w-4 text-blue-600" /> Today's Staff Allocation & Workload
+              Distribution
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Assigned physical cake workload across active bakery staff on {todayStr} (Soft Guideline: 6.0 units / person)
+              Assigned physical cake workload across active bakery staff on {todayStr} (Soft
+              Guideline: 6.0 units / person)
             </p>
           </div>
           <Button
@@ -1106,12 +1253,22 @@ function AdminAnalyticsPage() {
                 {staffSummary.staffWorkloads.map((w) => (
                   <tr key={w.staffId} className="hover:bg-muted/10 font-sans">
                     <td className="py-2 px-3 font-semibold text-foreground">{w.staffName}</td>
-                    <td className="py-2 px-3 font-mono">{w.bakeTaskCount} ({w.bakeUnits.toFixed(1)}u)</td>
-                    <td className="py-2 px-3 font-mono">{w.decorateTaskCount} ({w.decorateUnits.toFixed(1)}u)</td>
-                    <td className="py-2 px-3 font-mono font-bold text-foreground">{w.totalPhysicalWorkloadUnits.toFixed(1)} units</td>
-                    <td className="py-2 px-3 font-mono font-medium">{w.utilizationPercent.toFixed(0)}%</td>
+                    <td className="py-2 px-3 font-mono">
+                      {w.bakeTaskCount} ({w.bakeUnits.toFixed(1)}u)
+                    </td>
+                    <td className="py-2 px-3 font-mono">
+                      {w.decorateTaskCount} ({w.decorateUnits.toFixed(1)}u)
+                    </td>
+                    <td className="py-2 px-3 font-mono font-bold text-foreground">
+                      {w.totalPhysicalWorkloadUnits.toFixed(1)} units
+                    </td>
+                    <td className="py-2 px-3 font-mono font-medium">
+                      {w.utilizationPercent.toFixed(0)}%
+                    </td>
                     <td className="py-2 px-3">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${w.badgeClass}`}>
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold border ${w.badgeClass}`}
+                      >
                         {w.stateLabel}
                       </span>
                     </td>
@@ -1126,7 +1283,8 @@ function AdminAnalyticsPage() {
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 font-medium flex items-center justify-between">
             <span>⚠️ Unassigned Kitchen Roles on {todayStr}:</span>
             <span className="font-bold">
-              {staffSummary.unassignedBakersCount} Bake task(s) unassigned • {staffSummary.unassignedDecoratorsCount} Decorate task(s) unassigned
+              {staffSummary.unassignedBakersCount} Bake task(s) unassigned •{" "}
+              {staffSummary.unassignedDecoratorsCount} Decorate task(s) unassigned
             </span>
           </div>
         )}
@@ -1147,7 +1305,9 @@ function AdminAnalyticsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Custom Order Spend Collected</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Custom Order Spend Collected
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
                 <Banknote className="h-4 w-4" />
               </div>
@@ -1164,7 +1324,9 @@ function AdminAnalyticsPage() {
 
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Quoted Custom Pipeline</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Quoted Custom Pipeline
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600">
                 <DollarSign className="h-4 w-4" />
               </div>
@@ -1181,7 +1343,9 @@ function AdminAnalyticsPage() {
 
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Active Outstanding Due</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Active Outstanding Due
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
                 <Receipt className="h-4 w-4" />
               </div>
@@ -1204,9 +1368,7 @@ function AdminAnalyticsPage() {
               </div>
             </div>
             <div className="mt-4">
-              <div className="text-2xl font-bold text-purple-700">
-                {kpis.depositClearanceRate}%
-              </div>
+              <div className="text-2xl font-bold text-purple-700">{kpis.depositClearanceRate}%</div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 {kpis.depositPaidCount + kpis.fullyPaidCount} orders cleared for kitchen
               </p>
@@ -1218,7 +1380,9 @@ function AdminAnalyticsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-1">
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Registered Customers</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Registered Customers
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600">
                 <Users className="h-4 w-4" />
               </div>
@@ -1235,7 +1399,9 @@ function AdminAnalyticsPage() {
 
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Repeat Customer Rate</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Repeat Customer Rate
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600">
                 <TrendingUp className="h-4 w-4" />
               </div>
@@ -1250,7 +1416,9 @@ function AdminAnalyticsPage() {
 
           <div className="rounded-3xl bg-card p-5 shadow-soft border border-border/70 flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Average Review Rating</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                Average Review Rating
+              </span>
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
                 <Star className="h-4 w-4 fill-amber-500" />
               </div>

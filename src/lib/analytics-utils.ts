@@ -1,13 +1,13 @@
 /**
  * SC FrostHeaven — Business & Kitchen Analytics Utilities
  * Phase 7G Implementation
- * 
+ *
  * Provides pure, timezone-safe mathematical models and aggregations for:
  * - Kitchen operations & throughput KPIs (Average production duration, completion rate, overdue/urgent/risk counts)
  * - 14-day production workload vs capacity horizon integration
  * - Staff workload distribution analytics
  * - CSV export serialization helpers
- * 
+ *
  * Reuses single-source-of-truth utilities:
  * - capacity-utils.ts
  * - staff-workload-utils.ts
@@ -98,7 +98,7 @@ export function calculateAverageProductionDuration(
   orders: Array<{
     production_started_at?: string | null | undefined;
     production_completed_at?: string | null | undefined;
-  }>
+  }>,
 ): ProductionDurationMetric {
   let validOrdersCount = 0;
   let totalMinutes = 0;
@@ -153,7 +153,7 @@ export function calculateAverageProductionDuration(
  * Excludes pre-quote/unaccepted orders and terminal declined/cancelled orders.
  */
 export function calculateProductionCompletionRate(
-  orders: Array<{ status: string }>
+  orders: Array<{ status: string }>,
 ): ProductionCompletionRateMetric {
   const ELIGIBLE_PRODUCTION_STATUSES = ["accepted", "in_baking", "ready", "completed"];
 
@@ -170,8 +170,7 @@ export function calculateProductionCompletionRate(
     }
   }
 
-  const ratePercent =
-    eligibleCount > 0 ? Math.round((completedCount / eligibleCount) * 100) : 0;
+  const ratePercent = eligibleCount > 0 ? Math.round((completedCount / eligibleCount) * 100) : 0;
 
   return {
     completedCount,
@@ -188,7 +187,7 @@ export function calculateKitchenOperationsKPIs(
   orders: KitchenOrderInput[],
   todayStr: string = getLocalDateString(),
   blackoutDates: BakeryBlackoutDate[] = [],
-  overloadedStaffIds?: Set<string>
+  overloadedStaffIds?: Set<string>,
 ): KitchenOperationsKPIs {
   const averageDuration = calculateAverageProductionDuration(orders);
   const completionRate = calculateProductionCompletionRate(orders);
@@ -202,7 +201,7 @@ export function calculateKitchenOperationsKPIs(
       parseInt(parts[2] || "1", 10) + 1,
       12,
       0,
-      0
+      0,
     );
     return getLocalDateString(d);
   })();
@@ -288,7 +287,7 @@ export function calculate14DayWorkloadCapacityForecast(
   orders: (CapacityOrderInput & { event_date?: string | null })[],
   capacitySettings: KitchenCapacitySetting[],
   blackoutDates: BakeryBlackoutDate[],
-  startDateYMD: string = getLocalDateString()
+  startDateYMD: string = getLocalDateString(),
 ): DailyWorkloadForecastItem[] {
   const result: DailyWorkloadForecastItem[] = [];
 
@@ -320,12 +319,7 @@ export function calculate14DayWorkloadCapacityForecast(
     });
 
     // 2. Production Capacity & Workload on this date
-    const capacityResult = calculateDailyCapacity(
-      dateStr,
-      orders,
-      capacitySettings,
-      blackoutDates
-    );
+    const capacityResult = calculateDailyCapacity(dateStr, orders, capacitySettings, blackoutDates);
 
     result.push({
       dateStr,
@@ -359,7 +353,7 @@ export function calculate14DayWorkloadCapacityForecast(
  * Builds standard CSV rows for the Kitchen Capacity Report.
  */
 export function generateCapacityReportCsvRows(
-  forecastItems: DailyWorkloadForecastItem[]
+  forecastItems: DailyWorkloadForecastItem[],
 ): (string | number)[][] {
   return forecastItems.map((item) => {
     return [
@@ -384,7 +378,7 @@ export function generateCapacityReportCsvRows(
  */
 export function generateStaffWorkloadReportCsvRows(
   staffWorkloads: StaffDailyWorkloadResult[],
-  dateStr: string
+  dateStr: string,
 ): (string | number)[][] {
   return staffWorkloads.map((w) => {
     return [
@@ -399,7 +393,9 @@ export function generateStaffWorkloadReportCsvRows(
       w.guidelineUnits.toFixed(1),
       `${w.utilizationPercent.toFixed(1)}%`,
       w.stateLabel,
-      w.hasInvalidComplexity ? `${w.invalidComplexityOrderCount} orders missing complexity` : "Clean",
+      w.hasInvalidComplexity
+        ? `${w.invalidComplexityOrderCount} orders missing complexity`
+        : "Clean",
     ];
   });
 }

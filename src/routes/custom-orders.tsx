@@ -14,12 +14,14 @@ export const Route = createFileRoute("/custom-orders")({
       { title: "Custom Orders — SC Frost Heaven" },
       {
         name: "description",
-        content: "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
+        content:
+          "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
       },
       { property: "og:title", content: "Custom Orders — SC Frost Heaven" },
       {
         property: "og:description",
-        content: "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
+        content:
+          "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -105,11 +107,11 @@ function CustomOrdersPage() {
     const form = e.currentTarget;
     const formData = new FormData(form);
 
-    const name = (formData.get("name") as string || "").trim();
-    const email = (formData.get("email") as string || "").trim();
-    const event = (formData.get("event") as string || "").trim();
-    const date = (formData.get("date") as string || "").trim();
-    const details = (formData.get("details") as string || "").trim();
+    const name = ((formData.get("name") as string) || "").trim();
+    const email = ((formData.get("email") as string) || "").trim();
+    const event = ((formData.get("event") as string) || "").trim();
+    const date = ((formData.get("date") as string) || "").trim();
+    const details = ((formData.get("details") as string) || "").trim();
 
     // 1. Validate required name
     if (!name) {
@@ -178,7 +180,9 @@ function CustomOrdersPage() {
 
       if (orderError) {
         console.error("Supabase insert error:", orderError);
-        toast.error(orderError.message || "Failed to submit your custom order request. Please try again.");
+        toast.error(
+          orderError.message || "Failed to submit your custom order request. Please try again.",
+        );
         return;
       }
 
@@ -211,17 +215,18 @@ function CustomOrdersPage() {
           }
 
           // Insert reference record into public.custom_order_images
-          const { error: imageRecordError } = await supabase
-            .from("custom_order_images")
-            .insert({
-              order_id: orderId,
-              storage_path: storagePath,
-              file_name: file.name,
-              file_size_bytes: file.size,
-            });
+          const { error: imageRecordError } = await supabase.from("custom_order_images").insert({
+            order_id: orderId,
+            storage_path: storagePath,
+            file_name: file.name,
+            file_size_bytes: file.size,
+          });
 
           if (imageRecordError) {
-            console.error(`custom_order_images record insert error for ${file.name}:`, imageRecordError);
+            console.error(
+              `custom_order_images record insert error for ${file.name}:`,
+              imageRecordError,
+            );
             uploadErrors.push(file.name);
           } else {
             uploadedImagesCount++;
@@ -231,11 +236,11 @@ function CustomOrdersPage() {
         if (uploadErrors.length > 0) {
           if (uploadedImagesCount === 0) {
             toast.error(
-              `Custom order created, but photo uploads failed (${uploadErrors.join(", ")}). Our team will contact you for references.`
+              `Custom order created, but photo uploads failed (${uploadErrors.join(", ")}). Our team will contact you for references.`,
             );
           } else {
             toast.warning(
-              `Custom order created with ${uploadedImagesCount} of ${selectedFiles.length} photos uploaded.`
+              `Custom order created with ${uploadedImagesCount} of ${selectedFiles.length} photos uploaded.`,
             );
           }
         } else {

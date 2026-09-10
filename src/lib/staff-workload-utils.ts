@@ -1,7 +1,7 @@
 /**
  * SC FrostHeaven — Staff Assignment & Workload Management Utilities
  * Phase 7E Implementation
- * 
+ *
  * Pure, timezone-safe mathematical models and helpers for:
  * - Baker & Decorator role assignment states
  * - Activity-based staff workload calculation (Same-day single count, multi-day distinct allocation)
@@ -33,16 +33,9 @@ export interface StaffOrderInput {
   production_priority?: string | null | undefined;
 }
 
-export type AssignmentState =
-  | "fully_assigned"
-  | "baker_only"
-  | "decorator_only"
-  | "unassigned";
+export type AssignmentState = "fully_assigned" | "baker_only" | "decorator_only" | "unassigned";
 
-export type StaffWorkloadState =
-  | "within_guideline"
-  | "near_guideline"
-  | "overloaded";
+export type StaffWorkloadState = "within_guideline" | "near_guideline" | "overloaded";
 
 export interface StaffDailyWorkloadResult {
   staffId: string;
@@ -109,7 +102,9 @@ export function getStaffDisplayName(staff: StaffProfileInput | null | undefined)
  */
 export function getAssignmentState(order: StaffOrderInput): AssignmentState {
   const hasBaker = Boolean(order.assigned_baker_id && order.assigned_baker_id.trim().length > 0);
-  const hasDecorator = Boolean(order.assigned_decorator_id && order.assigned_decorator_id.trim().length > 0);
+  const hasDecorator = Boolean(
+    order.assigned_decorator_id && order.assigned_decorator_id.trim().length > 0,
+  );
 
   if (hasBaker && hasDecorator) return "fully_assigned";
   if (hasBaker && !hasDecorator) return "baker_only";
@@ -151,7 +146,8 @@ export function getStaffWorkloadState(utilizationPercent: number): {
     return {
       state: "near_guideline",
       stateLabel: "Near Guideline",
-      badgeClass: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold",
+      badgeClass:
+        "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold",
       progressBarClass: "bg-amber-500",
     };
   }
@@ -165,7 +161,7 @@ export function getStaffWorkloadState(utilizationPercent: number): {
 
 /**
  * Calculates daily workload for a single staff member on a specific date (YYYY-MM-DD).
- * 
+ *
  * Rules enforced:
  * 1. Activity-Based Station Allocation:
  *    - Baker workload assigned on scheduled_bake_date
@@ -185,7 +181,7 @@ export function calculateStaffDailyWorkload(
   staffId: string,
   staffName: string,
   orders: StaffOrderInput[],
-  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE
+  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE,
 ): StaffDailyWorkloadResult {
   let bakeUnits = 0;
   let decorateUnits = 0;
@@ -194,15 +190,20 @@ export function calculateStaffDailyWorkload(
   let invalidComplexityOrderCount = 0;
 
   // Map to enforce Same-Day Single Count for physical cake workload
-  const distinctOrdersOnDate = new Map<string, { order: StaffOrderInput; validComplexity: number | null }>();
+  const distinctOrdersOnDate = new Map<
+    string,
+    { order: StaffOrderInput; validComplexity: number | null }
+  >();
 
   for (const order of orders) {
     if (!isStaffWorkloadStatus(order.status)) {
       continue;
     }
 
-    const isBakerOnDate = order.assigned_baker_id === staffId && order.scheduled_bake_date === dateYMD;
-    const isDecoratorOnDate = order.assigned_decorator_id === staffId && order.scheduled_decorate_date === dateYMD;
+    const isBakerOnDate =
+      order.assigned_baker_id === staffId && order.scheduled_bake_date === dateYMD;
+    const isDecoratorOnDate =
+      order.assigned_decorator_id === staffId && order.scheduled_decorate_date === dateYMD;
 
     if (!isBakerOnDate && !isDecoratorOnDate) {
       continue;
@@ -243,9 +244,8 @@ export function calculateStaffDailyWorkload(
   decorateUnits = Math.round(decorateUnits * 10) / 10;
 
   const totalDistinctOrdersCount = distinctOrdersOnDate.size;
-  const utilizationPercent = guidelineUnits > 0
-    ? (totalPhysicalWorkloadUnits / guidelineUnits) * 100
-    : 0;
+  const utilizationPercent =
+    guidelineUnits > 0 ? (totalPhysicalWorkloadUnits / guidelineUnits) * 100 : 0;
 
   const stateInfo = getStaffWorkloadState(utilizationPercent);
 
@@ -277,7 +277,7 @@ export function calculateStaffWorkloads(
   dateYMD: string,
   staffList: StaffProfileInput[],
   orders: StaffOrderInput[],
-  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE
+  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE,
 ): StaffDailyWorkloadResult[] {
   return staffList.map((staff) => {
     const staffName = getStaffDisplayName(staff);
@@ -292,7 +292,7 @@ export function getStaffWorkloadSummary(
   dateYMD: string,
   staffList: StaffProfileInput[],
   orders: StaffOrderInput[],
-  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE
+  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE,
 ): StaffWorkloadSummaryResult {
   const staffWorkloads = calculateStaffWorkloads(dateYMD, staffList, orders, guidelineUnits);
 
@@ -317,10 +317,16 @@ export function getStaffWorkloadSummary(
   orders.forEach((order) => {
     if (!isStaffWorkloadStatus(order.status)) return;
 
-    if (order.scheduled_bake_date === dateYMD && (!order.assigned_baker_id || !order.assigned_baker_id.trim())) {
+    if (
+      order.scheduled_bake_date === dateYMD &&
+      (!order.assigned_baker_id || !order.assigned_baker_id.trim())
+    ) {
       unassignedBakersCount++;
     }
-    if (order.scheduled_decorate_date === dateYMD && (!order.assigned_decorator_id || !order.assigned_decorator_id.trim())) {
+    if (
+      order.scheduled_decorate_date === dateYMD &&
+      (!order.assigned_decorator_id || !order.assigned_decorator_id.trim())
+    ) {
       unassignedDecoratorsCount++;
     }
   });
@@ -351,7 +357,10 @@ export function getUnassignedOrders(orders: StaffOrderInput[]): StaffOrderInput[
 /**
  * Filters orders assigned to a specific staff member (as Baker OR Decorator).
  */
-export function getStaffAssignedOrders(orders: StaffOrderInput[], staffId: string): StaffOrderInput[] {
+export function getStaffAssignedOrders(
+  orders: StaffOrderInput[],
+  staffId: string,
+): StaffOrderInput[] {
   return orders.filter((order) => {
     return order.assigned_baker_id === staffId || order.assigned_decorator_id === staffId;
   });
@@ -369,7 +378,7 @@ export function previewStaffAssignmentImpact(
   orderComplexityUnits: number | null | undefined,
   role: "baker" | "decorator",
   allOrders: StaffOrderInput[],
-  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE
+  guidelineUnits: number = DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE,
 ): {
   currentWorkload: number;
   newWorkload: number;
@@ -386,7 +395,7 @@ export function previewStaffAssignmentImpact(
     staffId,
     staffName,
     allOrders,
-    guidelineUnits
+    guidelineUnits,
   );
 
   const currentWorkload = currentResult.totalPhysicalWorkloadUnits;
@@ -396,7 +405,8 @@ export function previewStaffAssignmentImpact(
   const isAlreadyCountedOnDate = allOrders.some((o) => {
     if (o.id !== orderIdToAssign || !isStaffWorkloadStatus(o.status)) return false;
     const isBaker = o.assigned_baker_id === staffId && o.scheduled_bake_date === dateYMD;
-    const isDecorator = o.assigned_decorator_id === staffId && o.scheduled_decorate_date === dateYMD;
+    const isDecorator =
+      o.assigned_decorator_id === staffId && o.scheduled_decorate_date === dateYMD;
     return isBaker || isDecorator;
   });
 
@@ -405,9 +415,8 @@ export function previewStaffAssignmentImpact(
     : Math.round((currentWorkload + validComplexity) * 10) / 10;
 
   const currentUtilization = currentResult.utilizationPercent;
-  const newUtilization = guidelineUnits > 0
-    ? Math.round(((newWorkload / guidelineUnits) * 100) * 10) / 10
-    : 0;
+  const newUtilization =
+    guidelineUnits > 0 ? Math.round((newWorkload / guidelineUnits) * 100 * 10) / 10 : 0;
 
   const isOverloaded = newUtilization > 100;
   const overageUnits = Math.max(0, Math.round((newWorkload - guidelineUnits) * 10) / 10);
@@ -418,13 +427,13 @@ export function previewStaffAssignmentImpact(
   if (isOverloaded) {
     requiresNotice = true;
     warningMessage = `Workload Notice: Assigning this order brings ${staffName}'s workload on ${dateYMD} to ${newWorkload.toFixed(
-      1
+      1,
     )} / ${guidelineUnits.toFixed(1)} units (${newUtilization.toFixed(
-      1
+      1,
     )}% load — ${overageUnits.toFixed(1)} units above guideline).`;
   } else if (newUtilization > 80) {
     warningMessage = `Advisory: ${staffName} will be near daily guideline on ${dateYMD} (${newWorkload.toFixed(
-      1
+      1,
     )} / ${guidelineUnits.toFixed(1)} units — ${newUtilization.toFixed(1)}% load).`;
   }
 

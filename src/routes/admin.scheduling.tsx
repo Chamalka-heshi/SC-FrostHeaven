@@ -178,7 +178,7 @@ export function getMondayOfWeek(ymd: string): string {
 
 export function formatDisplayDate(
   ymd: string | null | undefined,
-  style: "short" | "medium" | "long" = "medium"
+  style: "short" | "medium" | "long" = "medium",
 ): string {
   if (!ymd) return "—";
   try {
@@ -288,7 +288,7 @@ function AdminSchedulingPage() {
       orders as any,
       capacitySettings,
       blackoutDates,
-      today
+      today,
     );
     const headers = [
       "Date (YYYY-MM-DD)",
@@ -379,7 +379,8 @@ function AdminSchedulingPage() {
       // 1. Fetch custom orders
       const { data: ordersData, error: ordersError } = await supabase
         .from("custom_orders")
-        .select(`
+        .select(
+          `
           id,
           customer_id,
           customer_name,
@@ -413,7 +414,8 @@ function AdminSchedulingPage() {
           fully_paid_at,
           created_at,
           updated_at
-        `)
+        `,
+        )
         .order("created_at", { ascending: false });
 
       if (ordersError) throw ordersError;
@@ -476,7 +478,7 @@ function AdminSchedulingPage() {
     setFormComplexity(
       order.complexity_units !== undefined && order.complexity_units !== null
         ? Number(order.complexity_units)
-        : 1.0
+        : 1.0,
     );
     setFormBakerId(order.assigned_baker_id || "");
     setFormDecoratorId(order.assigned_decorator_id || "");
@@ -533,7 +535,9 @@ function AdminSchedulingPage() {
 
       if (error) throw error;
 
-      toast.success(`Production schedule updated for #${editingOrder.id.slice(0, 8).toUpperCase()}`);
+      toast.success(
+        `Production schedule updated for #${editingOrder.id.slice(0, 8).toUpperCase()}`,
+      );
       handleCloseScheduleEditor();
       await fetchData(true);
     } catch (err: any) {
@@ -690,14 +694,18 @@ function AdminSchedulingPage() {
       if (staffFilter !== "all") {
         if (staffFilter === "unassigned") {
           const hasBaker = Boolean(order.assigned_baker_id && order.assigned_baker_id.trim());
-          const hasDecorator = Boolean(order.assigned_decorator_id && order.assigned_decorator_id.trim());
+          const hasDecorator = Boolean(
+            order.assigned_decorator_id && order.assigned_decorator_id.trim(),
+          );
           if (hasBaker && hasDecorator) return false;
         } else if (staffFilter === "my_work") {
-          const isMine = order.assigned_baker_id === user?.id || order.assigned_decorator_id === user?.id;
+          const isMine =
+            order.assigned_baker_id === user?.id || order.assigned_decorator_id === user?.id;
           if (!isMine) return false;
         } else {
           // Specific staff UUID
-          const matchesStaff = order.assigned_baker_id === staffFilter || order.assigned_decorator_id === staffFilter;
+          const matchesStaff =
+            order.assigned_baker_id === staffFilter || order.assigned_decorator_id === staffFilter;
           if (!matchesStaff) return false;
         }
       }
@@ -724,7 +732,16 @@ function AdminSchedulingPage() {
 
       return true;
     });
-  }, [orders, showCompleted, statusFilter, priorityFilter, schedulingFilter, staffFilter, searchQuery, user?.id]);
+  }, [
+    orders,
+    showCompleted,
+    statusFilter,
+    priorityFilter,
+    schedulingFilter,
+    staffFilter,
+    searchQuery,
+    user?.id,
+  ]);
 
   // Unscheduled Orders List (Active orders with missing bake or decorate date)
   const unscheduledOrders = useMemo(() => {
@@ -741,10 +758,7 @@ function AdminSchedulingPage() {
       const s = (o.status || "").toLowerCase();
       return s === "submitted" || s === "under_review" || s === "quoted";
     });
-    const totalUnits = tentative.reduce(
-      (acc, o) => acc + (Number(o.complexity_units) || 1.0),
-      0
-    );
+    const totalUnits = tentative.reduce((acc, o) => acc + (Number(o.complexity_units) || 1.0), 0);
     return {
       count: tentative.length,
       units: totalUnits,
@@ -761,7 +775,10 @@ function AdminSchedulingPage() {
       const dayYMD = addDaysToYMD(mondayYMD, i);
       const d = parseYMDToLocalDate(dayYMD);
       const dayName = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
-      const dateDisplay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(d);
+      const dateDisplay = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+      }).format(d);
       days.push({
         ymd: dayYMD,
         dayName,
@@ -776,12 +793,7 @@ function AdminSchedulingPage() {
   const weekCapacityMap = useMemo(() => {
     const map = new Map<string, DailyCapacityResult>();
     weekDays.forEach((day) => {
-      const result = calculateDailyCapacity(
-        day.ymd,
-        orders,
-        capacitySettings,
-        blackoutDates
-      );
+      const result = calculateDailyCapacity(day.ymd, orders, capacitySettings, blackoutDates);
       map.set(day.ymd, result);
     });
     return map;
@@ -789,12 +801,7 @@ function AdminSchedulingPage() {
 
   // Single Day Capacity Result for Day View
   const selectedDayCapacity = useMemo(() => {
-    return calculateDailyCapacity(
-      selectedDateYMD,
-      orders,
-      capacitySettings,
-      blackoutDates
-    );
+    return calculateDailyCapacity(selectedDateYMD, orders, capacitySettings, blackoutDates);
   }, [selectedDateYMD, orders, capacitySettings, blackoutDates]);
 
   // Live Capacity Impact Preview for Editing Order
@@ -809,9 +816,17 @@ function AdminSchedulingPage() {
       Number(formComplexity || 1.0),
       orders,
       capacitySettings,
-      blackoutDates
+      blackoutDates,
     );
-  }, [editingOrder, formBakeDate, formDecorateDate, formComplexity, orders, capacitySettings, blackoutDates]);
+  }, [
+    editingOrder,
+    formBakeDate,
+    formDecorateDate,
+    formComplexity,
+    orders,
+    capacitySettings,
+    blackoutDates,
+  ]);
 
   // Baker Staff Workload Live Preview
   const bakerStaffPreview = useMemo(() => {
@@ -825,7 +840,7 @@ function AdminSchedulingPage() {
       editingOrder.id,
       formComplexity,
       "baker",
-      orders
+      orders,
     );
   }, [formBakerId, formBakeDate, formComplexity, editingOrder, orders, staffMap]);
 
@@ -841,7 +856,7 @@ function AdminSchedulingPage() {
       editingOrder.id,
       formComplexity,
       "decorator",
-      orders
+      orders,
     );
   }, [formDecoratorId, formDecorateDate, formComplexity, editingOrder, orders, staffMap]);
 
@@ -909,8 +924,12 @@ function AdminSchedulingPage() {
           <Loader2 className="absolute -bottom-1 -right-1 h-5 w-5 animate-spin text-primary" />
         </div>
         <div className="text-center">
-          <p className="text-sm font-semibold text-foreground">Loading Kitchen Production Schedule & Capacity...</p>
-          <p className="text-xs text-muted-foreground mt-1">Fetching custom orders, capacity limits & artisan calendars</p>
+          <p className="text-sm font-semibold text-foreground">
+            Loading Kitchen Production Schedule & Capacity...
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Fetching custom orders, capacity limits & artisan calendars
+          </p>
         </div>
       </div>
     );
@@ -950,7 +969,10 @@ function AdminSchedulingPage() {
               title="Unconfirmed orders in submitted, under_review, or quoted status"
             >
               <Info className="h-3.5 w-3.5" />
-              <span>Pipeline: {tentativePipelineSummary.count} orders ({tentativePipelineSummary.units.toFixed(1)}u)</span>
+              <span>
+                Pipeline: {tentativePipelineSummary.count} orders (
+                {tentativePipelineSummary.units.toFixed(1)}u)
+              </span>
             </div>
           )}
 
@@ -1025,7 +1047,9 @@ function AdminSchedulingPage() {
             className="rounded-full gap-1.5 shadow-xs cursor-pointer"
             title="Refresh scheduling and capacity data"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`}
+            />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
         </div>
@@ -1097,9 +1121,7 @@ function AdminSchedulingPage() {
 
           {/* Center / Heading */}
           <div className="text-center md:text-left">
-            <h2 className="text-base sm:text-lg font-bold text-foreground">
-              {dateRangeHeading}
-            </h2>
+            <h2 className="text-base sm:text-lg font-bold text-foreground">{dateRangeHeading}</h2>
             <p className="text-[11px] text-muted-foreground">
               {viewMode === "week" ? "7-Day Capacity Horizon" : "Daily Production Capacity"}
             </p>
@@ -1107,7 +1129,10 @@ function AdminSchedulingPage() {
 
           {/* Right: Date Picker Jump */}
           <div className="flex items-center gap-2">
-            <label htmlFor="calendar-jump-date" className="text-xs text-muted-foreground whitespace-nowrap">
+            <label
+              htmlFor="calendar-jump-date"
+              className="text-xs text-muted-foreground whitespace-nowrap"
+            >
               Jump to:
             </label>
             <Input
@@ -1157,15 +1182,17 @@ function AdminSchedulingPage() {
                       day.isToday
                         ? "bg-primary/[0.04] border-primary/40 ring-1 ring-primary/30"
                         : cap.isBlackout
-                        ? "bg-zinc-500/[0.04] border-border"
-                        : "bg-muted/30 border-border/70"
+                          ? "bg-zinc-500/[0.04] border-border"
+                          : "bg-muted/30 border-border/70"
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-bold text-foreground">
                         {day.dayName} {day.dateDisplay.split(" ")[1]}
                       </span>
-                      <span className={`text-[10px] font-bold rounded-md px-1.5 py-0.2 border ${cap.badgeClass}`}>
+                      <span
+                        className={`text-[10px] font-bold rounded-md px-1.5 py-0.2 border ${cap.badgeClass}`}
+                      >
                         {cap.isBlackout ? "Closed" : `${Math.round(cap.utilizationPercent)}%`}
                       </span>
                     </div>
@@ -1180,8 +1207,14 @@ function AdminSchedulingPage() {
 
                     {/* Workload metric */}
                     <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{cap.isBlackout ? "Blackout" : `${cap.committedWorkloadUnits.toFixed(1)}/${cap.maxCapacityUnits.toFixed(1)}u`}</span>
-                      <span className="truncate max-w-[65px]">{cap.committedOrderCount} {cap.committedOrderCount === 1 ? "cake" : "cakes"}</span>
+                      <span>
+                        {cap.isBlackout
+                          ? "Blackout"
+                          : `${cap.committedWorkloadUnits.toFixed(1)}/${cap.maxCapacityUnits.toFixed(1)}u`}
+                      </span>
+                      <span className="truncate max-w-[65px]">
+                        {cap.committedOrderCount} {cap.committedOrderCount === 1 ? "cake" : "cakes"}
+                      </span>
                     </div>
                   </div>
                 );
@@ -1300,13 +1333,11 @@ function AdminSchedulingPage() {
             const staffSummary = getStaffWorkloadSummary(day.ymd, staffList, orders);
 
             // Find orders with bake activity on this day
-            const bakeOrders = filteredOrders.filter(
-              (o) => o.scheduled_bake_date === day.ymd
-            );
+            const bakeOrders = filteredOrders.filter((o) => o.scheduled_bake_date === day.ymd);
 
             // Find orders with decorate activity on this day
             const decorateOrders = filteredOrders.filter(
-              (o) => o.scheduled_decorate_date === day.ymd
+              (o) => o.scheduled_decorate_date === day.ymd,
             );
 
             const progressWidth = isBlackout
@@ -1320,12 +1351,12 @@ function AdminSchedulingPage() {
                   day.isToday
                     ? "border-primary ring-2 ring-primary/20 bg-primary/[0.02]"
                     : cap?.state === "over_capacity"
-                    ? "border-rose-500/40 bg-rose-500/[0.01]"
-                    : cap?.state === "near_capacity"
-                    ? "border-amber-500/40 bg-amber-500/[0.01]"
-                    : isBlackout
-                    ? "border-zinc-500/40 bg-zinc-500/[0.02]"
-                    : "border-border/80"
+                      ? "border-rose-500/40 bg-rose-500/[0.01]"
+                      : cap?.state === "near_capacity"
+                        ? "border-amber-500/40 bg-amber-500/[0.01]"
+                        : isBlackout
+                          ? "border-zinc-500/40 bg-zinc-500/[0.02]"
+                          : "border-border/80"
                 }`}
               >
                 {/* Column Header with Capacity Meter */}
@@ -1334,12 +1365,12 @@ function AdminSchedulingPage() {
                     day.isToday
                       ? "bg-primary/10 border-primary/20"
                       : isBlackout
-                      ? "bg-zinc-500/10 border-zinc-500/20"
-                      : cap?.state === "over_capacity"
-                      ? "bg-rose-500/10 border-rose-500/20"
-                      : cap?.state === "near_capacity"
-                      ? "bg-amber-500/10 border-amber-500/20"
-                      : "bg-muted/30 border-border/60"
+                        ? "bg-zinc-500/10 border-zinc-500/20"
+                        : cap?.state === "over_capacity"
+                          ? "bg-rose-500/10 border-rose-500/20"
+                          : cap?.state === "near_capacity"
+                            ? "bg-amber-500/10 border-amber-500/20"
+                            : "bg-muted/30 border-border/60"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -1355,14 +1386,16 @@ function AdminSchedulingPage() {
                       </span>
                     ) : (
                       cap && (
-                        <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold border ${cap.badgeClass}`}>
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold border ${cap.badgeClass}`}
+                        >
                           {cap.isBlackout
                             ? "Closed"
                             : cap.state === "over_capacity"
-                            ? "Over"
-                            : cap.state === "near_capacity"
-                            ? "Near"
-                            : "OK"}
+                              ? "Over"
+                              : cap.state === "near_capacity"
+                                ? "Near"
+                                : "OK"}
                         </span>
                       )
                     )}
@@ -1383,7 +1416,8 @@ function AdminSchedulingPage() {
                     <div className="mt-2.5 space-y-1">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="font-semibold text-foreground">
-                          {cap.committedWorkloadUnits.toFixed(1)} / {cap.maxCapacityUnits.toFixed(1)} u
+                          {cap.committedWorkloadUnits.toFixed(1)} /{" "}
+                          {cap.maxCapacityUnits.toFixed(1)} u
                         </span>
                         <span className="font-bold text-muted-foreground">
                           {Math.round(cap.utilizationPercent)}%
@@ -1409,7 +1443,9 @@ function AdminSchedulingPage() {
                   </div>
 
                   {/* Staff Assignment & Workload Summary Indicator */}
-                  {(staffSummary.unassignedBakersCount > 0 || staffSummary.unassignedDecoratorsCount > 0 || staffSummary.overloadedStaffCount > 0) && (
+                  {(staffSummary.unassignedBakersCount > 0 ||
+                    staffSummary.unassignedDecoratorsCount > 0 ||
+                    staffSummary.overloadedStaffCount > 0) && (
                     <div className="mt-1.5 flex items-center justify-between text-[9px] font-medium pt-1 border-t border-border/30">
                       {staffSummary.overloadedStaffCount > 0 ? (
                         <span className="text-rose-600 dark:text-rose-400 font-bold">
@@ -1418,9 +1454,16 @@ function AdminSchedulingPage() {
                       ) : (
                         <span className="text-muted-foreground">Staff Load OK</span>
                       )}
-                      {(staffSummary.unassignedBakersCount > 0 || staffSummary.unassignedDecoratorsCount > 0) && (
-                        <span className="text-amber-600 dark:text-amber-400 font-semibold" title="Unassigned baker or decorator roles on this date">
-                          ⚠️ {staffSummary.unassignedBakersCount + staffSummary.unassignedDecoratorsCount} unassigned
+                      {(staffSummary.unassignedBakersCount > 0 ||
+                        staffSummary.unassignedDecoratorsCount > 0) && (
+                        <span
+                          className="text-amber-600 dark:text-amber-400 font-semibold"
+                          title="Unassigned baker or decorator roles on this date"
+                        >
+                          ⚠️{" "}
+                          {staffSummary.unassignedBakersCount +
+                            staffSummary.unassignedDecoratorsCount}{" "}
+                          unassigned
                         </span>
                       )}
                     </div>
@@ -1478,10 +1521,10 @@ function AdminSchedulingPage() {
             const cap = selectedDayCapacity;
             const isBlackout = cap.isBlackout;
             const bakeOrders = filteredOrders.filter(
-              (o) => o.scheduled_bake_date === selectedDateYMD
+              (o) => o.scheduled_bake_date === selectedDateYMD,
             );
             const decorateOrders = filteredOrders.filter(
-              (o) => o.scheduled_decorate_date === selectedDateYMD
+              (o) => o.scheduled_decorate_date === selectedDateYMD,
             );
             const progressWidth = isBlackout
               ? 0
@@ -1501,18 +1544,23 @@ function AdminSchedulingPage() {
 
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="rounded-2xl bg-secondary/60 border border-border px-3.5 py-1.5 text-center">
-                      <p className="text-[10px] text-muted-foreground uppercase font-bold">Committed Cakes</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-bold">
+                        Committed Cakes
+                      </p>
                       <p className="text-sm font-bold text-foreground">{cap.committedOrderCount}</p>
                     </div>
 
                     <div className="rounded-2xl bg-primary/10 border border-primary/20 px-3.5 py-1.5 text-center">
                       <p className="text-[10px] text-primary uppercase font-bold">Workload</p>
                       <p className="text-sm font-bold text-primary">
-                        {cap.committedWorkloadUnits.toFixed(1)} / {cap.maxCapacityUnits.toFixed(1)} u
+                        {cap.committedWorkloadUnits.toFixed(1)} / {cap.maxCapacityUnits.toFixed(1)}{" "}
+                        u
                       </p>
                     </div>
 
-                    <div className={`rounded-2xl border px-3.5 py-1.5 text-center ${cap.badgeClass}`}>
+                    <div
+                      className={`rounded-2xl border px-3.5 py-1.5 text-center ${cap.badgeClass}`}
+                    >
                       <p className="text-[10px] uppercase font-bold">Capacity State</p>
                       <p className="text-sm font-bold">{cap.stateLabel}</p>
                     </div>
@@ -1525,7 +1573,8 @@ function AdminSchedulingPage() {
                     <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
                       <span>Capacity Utilization</span>
                       <span className="font-bold text-foreground">
-                        {cap.committedWorkloadUnits.toFixed(1)} / {cap.maxCapacityUnits.toFixed(1)} units ({Math.round(cap.utilizationPercent)}%)
+                        {cap.committedWorkloadUnits.toFixed(1)} / {cap.maxCapacityUnits.toFixed(1)}{" "}
+                        units ({Math.round(cap.utilizationPercent)}%)
                       </span>
                     </div>
                     <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
@@ -1536,7 +1585,8 @@ function AdminSchedulingPage() {
                     </div>
                     {cap.state === "over_capacity" && (
                       <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-                        ⚠️ Notice: This day is currently {Math.abs(cap.remainingUnits).toFixed(1)} units over configured capacity.
+                        ⚠️ Notice: This day is currently {Math.abs(cap.remainingUnits).toFixed(1)}{" "}
+                        units over configured capacity.
                       </p>
                     )}
                   </div>
@@ -1550,7 +1600,8 @@ function AdminSchedulingPage() {
                       {cap.blackoutReason}
                       {cap.hasBlackoutConflict && (
                         <span className="block mt-0.5 text-rose-700 dark:text-rose-400 font-bold">
-                          ⚠️ {cap.committedOrderCount} orders are currently scheduled on this closed date.
+                          ⚠️ {cap.committedOrderCount} orders are currently scheduled on this closed
+                          date.
                         </span>
                       )}
                     </div>
@@ -1641,9 +1692,12 @@ function AdminSchedulingPage() {
                             <User className="h-4 w-4" />
                           </div>
                           <div>
-                            <h3 className="text-sm font-bold text-foreground">Staff Workload Distribution</h3>
+                            <h3 className="text-sm font-bold text-foreground">
+                              Staff Workload Distribution
+                            </h3>
                             <p className="text-[11px] text-muted-foreground">
-                              Daily guideline: {DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE.toFixed(1)} units/person • {staffSummary.activeStaffCount} active staff
+                              Daily guideline: {DEFAULT_STAFF_DAILY_WORKLOAD_GUIDELINE.toFixed(1)}{" "}
+                              units/person • {staffSummary.activeStaffCount} active staff
                             </p>
                           </div>
                         </div>
@@ -1654,9 +1708,13 @@ function AdminSchedulingPage() {
                               ⚠️ {staffSummary.overloadedStaffCount} Overloaded
                             </span>
                           )}
-                          {(staffSummary.unassignedBakersCount > 0 || staffSummary.unassignedDecoratorsCount > 0) && (
+                          {(staffSummary.unassignedBakersCount > 0 ||
+                            staffSummary.unassignedDecoratorsCount > 0) && (
                             <span className="rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 px-2.5 py-0.5 font-medium">
-                              ⚠️ {staffSummary.unassignedBakersCount + staffSummary.unassignedDecoratorsCount} Unassigned Role(s)
+                              ⚠️{" "}
+                              {staffSummary.unassignedBakersCount +
+                                staffSummary.unassignedDecoratorsCount}{" "}
+                              Unassigned Role(s)
                             </span>
                           )}
                         </div>
@@ -1675,15 +1733,20 @@ function AdminSchedulingPage() {
                                 sw.state === "overloaded"
                                   ? "bg-rose-500/[0.04] border-rose-500/40"
                                   : sw.state === "near_guideline"
-                                  ? "bg-amber-500/[0.04] border-amber-500/40"
-                                  : "bg-muted/20 border-border/70"
+                                    ? "bg-amber-500/[0.04] border-amber-500/40"
+                                    : "bg-muted/20 border-border/70"
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-xs text-foreground truncate max-w-[140px]" title={sw.staffName}>
+                                <span
+                                  className="font-bold text-xs text-foreground truncate max-w-[140px]"
+                                  title={sw.staffName}
+                                >
                                   👤 {sw.staffName}
                                 </span>
-                                <span className={`text-[10px] font-bold rounded-md px-1.5 py-0.5 border ${sw.badgeClass}`}>
+                                <span
+                                  className={`text-[10px] font-bold rounded-md px-1.5 py-0.5 border ${sw.badgeClass}`}
+                                >
                                   {sw.stateLabel}
                                 </span>
                               </div>
@@ -1692,23 +1755,35 @@ function AdminSchedulingPage() {
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between text-[10px]">
                                   <span className="font-semibold text-foreground">
-                                    {sw.totalPhysicalWorkloadUnits.toFixed(1)} / {sw.guidelineUnits.toFixed(1)} u
+                                    {sw.totalPhysicalWorkloadUnits.toFixed(1)} /{" "}
+                                    {sw.guidelineUnits.toFixed(1)} u
                                   </span>
-                                  <span className="font-bold text-muted-foreground">{Math.round(sw.utilizationPercent)}%</span>
+                                  <span className="font-bold text-muted-foreground">
+                                    {Math.round(sw.utilizationPercent)}%
+                                  </span>
                                 </div>
                                 <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                                   <div
                                     className={`h-full transition-all duration-300 ${sw.progressBarClass}`}
-                                    style={{ width: `${Math.min(100, Math.max(0, sw.utilizationPercent))}%` }}
+                                    style={{
+                                      width: `${Math.min(100, Math.max(0, sw.utilizationPercent))}%`,
+                                    }}
                                   />
                                 </div>
                               </div>
 
                               {/* Task count breakdown */}
                               <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/40">
-                                <span className="text-purple-700 dark:text-purple-300 font-medium">🥣 {sw.bakeTaskCount} Bake</span>
-                                <span className="text-pink-700 dark:text-pink-300 font-medium">✨ {sw.decorateTaskCount} Decor</span>
-                                <span className="font-semibold text-foreground">{sw.totalDistinctOrdersCount} {sw.totalDistinctOrdersCount === 1 ? "cake" : "cakes"}</span>
+                                <span className="text-purple-700 dark:text-purple-300 font-medium">
+                                  🥣 {sw.bakeTaskCount} Bake
+                                </span>
+                                <span className="text-pink-700 dark:text-pink-300 font-medium">
+                                  ✨ {sw.decorateTaskCount} Decor
+                                </span>
+                                <span className="font-semibold text-foreground">
+                                  {sw.totalDistinctOrdersCount}{" "}
+                                  {sw.totalDistinctOrdersCount === 1 ? "cake" : "cakes"}
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -1770,7 +1845,10 @@ function AdminSchedulingPage() {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {WEEKDAY_NAMES.map((name, index) => (
-                    <div key={`weekday-${index}`} className="rounded-2xl bg-muted/20 border border-border p-2.5 space-y-1">
+                    <div
+                      key={`weekday-${index}`}
+                      className="rounded-2xl bg-muted/20 border border-border p-2.5 space-y-1"
+                    >
                       <label className="text-[11px] font-semibold text-foreground block">
                         {name}
                       </label>
@@ -1935,7 +2013,9 @@ function AdminSchedulingPage() {
                 <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
                   <CheckCircle2 className="h-10 w-10 text-emerald-500 mb-2" />
                   <p className="text-sm font-semibold text-foreground">All Orders Scheduled!</p>
-                  <p className="text-xs mt-1">Every active custom cake has baking & decorating dates.</p>
+                  <p className="text-xs mt-1">
+                    Every active custom cake has baking & decorating dates.
+                  </p>
                 </div>
               ) : (
                 unscheduledOrders.map((order) => {
@@ -1959,10 +2039,16 @@ function AdminSchedulingPage() {
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Event: <span className="font-medium text-foreground">{formatDisplayDate(order.event_date, "short")}</span> ({order.event_type})
+                            Event:{" "}
+                            <span className="font-medium text-foreground">
+                              {formatDisplayDate(order.event_date, "short")}
+                            </span>{" "}
+                            ({order.event_type})
                           </p>
                         </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass}`}>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${readiness.badgeClass}`}
+                        >
                           {readiness.label}
                         </span>
                       </div>
@@ -2013,11 +2099,7 @@ function AdminSchedulingPage() {
       {/* 8. SCHEDULING EDITOR MODAL WITH LIVE CAPACITY PREVIEW */}
       {editingOrder && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0"
-            onClick={handleCloseScheduleEditor}
-            aria-hidden="true"
-          />
+          <div className="fixed inset-0" onClick={handleCloseScheduleEditor} aria-hidden="true" />
           <div className="relative flex max-h-[92vh] w-full max-w-xl flex-col rounded-3xl bg-card shadow-2xl border border-border overflow-hidden my-auto z-10">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/30">
@@ -2030,7 +2112,8 @@ function AdminSchedulingPage() {
                     Schedule Order #{editingOrder.id.slice(0, 8).toUpperCase()}
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    {editingOrder.customer_name} • Event Date: {formatDisplayDate(editingOrder.event_date, "medium")}
+                    {editingOrder.customer_name} • Event Date:{" "}
+                    {formatDisplayDate(editingOrder.event_date, "medium")}
                   </p>
                 </div>
               </div>
@@ -2049,7 +2132,9 @@ function AdminSchedulingPage() {
               <div className="rounded-2xl bg-secondary/40 border border-border/80 p-3.5 space-y-1 text-xs">
                 <div className="flex items-center justify-between font-semibold text-foreground">
                   <span>Customer Event: {editingOrder.event_type}</span>
-                  <span className="text-primary font-bold">{formatDisplayDate(editingOrder.event_date, "long")}</span>
+                  <span className="text-primary font-bold">
+                    {formatDisplayDate(editingOrder.event_date, "long")}
+                  </span>
                 </div>
                 <p className="text-muted-foreground line-clamp-2">
                   Specs: {editingOrder.cake_details}
@@ -2232,7 +2317,9 @@ function AdminSchedulingPage() {
                   <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
                     <Layers className="h-3.5 w-3.5 text-primary" />
                     Complexity / Workload Units:{" "}
-                    <span className="text-primary font-bold">{Number(formComplexity).toFixed(1)} Units</span>
+                    <span className="text-primary font-bold">
+                      {Number(formComplexity).toFixed(1)} Units
+                    </span>
                   </label>
                   <span className="text-[10px] text-muted-foreground">Range: 0.5 – 10.0</span>
                 </div>
@@ -2315,30 +2402,38 @@ function AdminSchedulingPage() {
               {(bakerStaffPreview || decoratorStaffPreview) && (
                 <div className="space-y-2">
                   {bakerStaffPreview && (
-                    <div className={`rounded-2xl border p-3 space-y-1.5 text-xs ${
-                      bakerStaffPreview.isOverloaded
-                        ? "bg-rose-500/[0.04] border-rose-500/40"
-                        : "bg-purple-500/[0.04] border-purple-500/30"
-                    }`}>
+                    <div
+                      className={`rounded-2xl border p-3 space-y-1.5 text-xs ${
+                        bakerStaffPreview.isOverloaded
+                          ? "bg-rose-500/[0.04] border-rose-500/40"
+                          : "bg-purple-500/[0.04] border-purple-500/30"
+                      }`}
+                    >
                       <div className="flex items-center justify-between font-semibold">
                         <span className="text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
                           <ChefHat className="h-3.5 w-3.5" />
-                          Baker Workload: {bakerStaffPreview.currentWorkload.toFixed(1)}u → {bakerStaffPreview.newWorkload.toFixed(1)} / {bakerStaffPreview.guideline.toFixed(1)} u
+                          Baker Workload: {bakerStaffPreview.currentWorkload.toFixed(1)}u →{" "}
+                          {bakerStaffPreview.newWorkload.toFixed(1)} /{" "}
+                          {bakerStaffPreview.guideline.toFixed(1)} u
                         </span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                          bakerStaffPreview.isOverloaded
-                            ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                        }`}>
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                            bakerStaffPreview.isOverloaded
+                              ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                              : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                          }`}
+                        >
                           {Math.round(bakerStaffPreview.newUtilization)}% Load
                         </span>
                       </div>
                       {bakerStaffPreview.warningMessage && (
-                        <div className={`flex items-start gap-1.5 rounded-xl p-2 text-[11px] ${
-                          bakerStaffPreview.isOverloaded
-                            ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20"
-                            : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"
-                        }`}>
+                        <div
+                          className={`flex items-start gap-1.5 rounded-xl p-2 text-[11px] ${
+                            bakerStaffPreview.isOverloaded
+                              ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20"
+                              : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"
+                          }`}
+                        >
                           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
                           <span>{bakerStaffPreview.warningMessage}</span>
                         </div>
@@ -2347,30 +2442,38 @@ function AdminSchedulingPage() {
                   )}
 
                   {decoratorStaffPreview && (
-                    <div className={`rounded-2xl border p-3 space-y-1.5 text-xs ${
-                      decoratorStaffPreview.isOverloaded
-                        ? "bg-rose-500/[0.04] border-rose-500/40"
-                        : "bg-pink-500/[0.04] border-pink-500/30"
-                    }`}>
+                    <div
+                      className={`rounded-2xl border p-3 space-y-1.5 text-xs ${
+                        decoratorStaffPreview.isOverloaded
+                          ? "bg-rose-500/[0.04] border-rose-500/40"
+                          : "bg-pink-500/[0.04] border-pink-500/30"
+                      }`}
+                    >
                       <div className="flex items-center justify-between font-semibold">
                         <span className="text-pink-700 dark:text-pink-300 flex items-center gap-1.5">
                           <Sparkles className="h-3.5 w-3.5" />
-                          Decorator Workload: {decoratorStaffPreview.currentWorkload.toFixed(1)}u → {decoratorStaffPreview.newWorkload.toFixed(1)} / {decoratorStaffPreview.guideline.toFixed(1)} u
+                          Decorator Workload: {decoratorStaffPreview.currentWorkload.toFixed(1)}u →{" "}
+                          {decoratorStaffPreview.newWorkload.toFixed(1)} /{" "}
+                          {decoratorStaffPreview.guideline.toFixed(1)} u
                         </span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                          decoratorStaffPreview.isOverloaded
-                            ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                        }`}>
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                            decoratorStaffPreview.isOverloaded
+                              ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                              : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                          }`}
+                        >
                           {Math.round(decoratorStaffPreview.newUtilization)}% Load
                         </span>
                       </div>
                       {decoratorStaffPreview.warningMessage && (
-                        <div className={`flex items-start gap-1.5 rounded-xl p-2 text-[11px] ${
-                          decoratorStaffPreview.isOverloaded
-                            ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20"
-                            : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"
-                        }`}>
+                        <div
+                          className={`flex items-start gap-1.5 rounded-xl p-2 text-[11px] ${
+                            decoratorStaffPreview.isOverloaded
+                              ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20"
+                              : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"
+                          }`}
+                        >
                           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
                           <span>{decoratorStaffPreview.warningMessage}</span>
                         </div>
@@ -2387,8 +2490,15 @@ function AdminSchedulingPage() {
                     <span className="text-muted-foreground">Capacity Impact Preview:</span>
                     <span className="text-foreground">
                       {scheduleImpact.currentWorkload.toFixed(1)}u →{" "}
-                      <span className={scheduleImpact.isOverCapacity ? "text-rose-600 font-bold" : "text-primary font-bold"}>
-                        {scheduleImpact.newWorkload.toFixed(1)} / {scheduleImpact.maxCapacity.toFixed(1)} u
+                      <span
+                        className={
+                          scheduleImpact.isOverCapacity
+                            ? "text-rose-600 font-bold"
+                            : "text-primary font-bold"
+                        }
+                      >
+                        {scheduleImpact.newWorkload.toFixed(1)} /{" "}
+                        {scheduleImpact.maxCapacity.toFixed(1)} u
                       </span>{" "}
                       ({Math.round(scheduleImpact.newUtilization)}%)
                     </span>
@@ -2405,7 +2515,9 @@ function AdminSchedulingPage() {
                       <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5 text-amber-500" />
                       <div>
                         <span className="font-bold">
-                          {scheduleImpact.isBlackout ? "Bakery Closed Warning: " : "Workload Notice: "}
+                          {scheduleImpact.isBlackout
+                            ? "Bakery Closed Warning: "
+                            : "Workload Notice: "}
                         </span>
                         <span>{scheduleImpact.warningMessage}</span>
                       </div>
@@ -2488,11 +2600,7 @@ function AdminSchedulingPage() {
       {/* 9. FULL ORDER DETAILS VIEW MODAL */}
       {viewingOrder && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div
-            className="fixed inset-0"
-            onClick={() => setViewingOrder(null)}
-            aria-hidden="true"
-          />
+          <div className="fixed inset-0" onClick={() => setViewingOrder(null)} aria-hidden="true" />
           <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl bg-card shadow-2xl border border-border overflow-hidden my-auto z-10">
             <div className="flex items-center justify-between border-b border-border/60 px-6 py-4 bg-muted/30">
               <div className="flex items-center gap-2.5">
@@ -2546,7 +2654,10 @@ function AdminSchedulingPage() {
                   <p className="text-muted-foreground font-medium">Event & Status</p>
                   <p className="font-bold text-foreground">{viewingOrder.event_type}</p>
                   <p className="text-muted-foreground">
-                    Event Date: <span className="font-semibold text-foreground">{formatDisplayDate(viewingOrder.event_date, "long")}</span>
+                    Event Date:{" "}
+                    <span className="font-semibold text-foreground">
+                      {formatDisplayDate(viewingOrder.event_date, "long")}
+                    </span>
                   </p>
                   <div className="pt-1 flex items-center gap-1.5">
                     <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[10px] font-bold text-primary">
@@ -2570,15 +2681,25 @@ function AdminSchedulingPage() {
               {/* Financial Snapshot */}
               <div className="grid grid-cols-3 gap-3 text-center text-xs">
                 <div className="rounded-xl bg-card border border-border p-2.5">
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Quoted Price</p>
-                  <p className="font-bold text-foreground mt-0.5">{formatLKR(viewingOrder.quoted_price_lkr)}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Quoted Price
+                  </p>
+                  <p className="font-bold text-foreground mt-0.5">
+                    {formatLKR(viewingOrder.quoted_price_lkr)}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-card border border-border p-2.5">
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Deposit Req.</p>
-                  <p className="font-bold text-foreground mt-0.5">{formatLKR(viewingOrder.deposit_amount_lkr)}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Deposit Req.
+                  </p>
+                  <p className="font-bold text-foreground mt-0.5">
+                    {formatLKR(viewingOrder.deposit_amount_lkr)}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-card border border-border p-2.5">
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Amount Paid</p>
+                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Amount Paid
+                  </p>
                   <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                     {formatLKR(viewingOrder.amount_paid_lkr)}
                   </p>
@@ -2714,7 +2835,10 @@ function OrderCalendarCard({
           {order.customer_name}
         </h4>
         <p className="text-[11px] text-muted-foreground truncate">
-          {order.event_type} • Due: <span className="font-medium text-foreground">{formatDisplayDate(order.event_date, "short")}</span>
+          {order.event_type} • Due:{" "}
+          <span className="font-medium text-foreground">
+            {formatDisplayDate(order.event_date, "short")}
+          </span>
         </p>
       </div>
 
@@ -2728,7 +2852,10 @@ function OrderCalendarCard({
             </span>
           )}
           {(isBake ? bakerName : decoratorName) && (
-            <span className="truncate max-w-[90px] font-medium" title={isBake ? bakerName : decoratorName}>
+            <span
+              className="truncate max-w-[90px] font-medium"
+              title={isBake ? bakerName : decoratorName}
+            >
               👤 {isBake ? bakerName : decoratorName}
             </span>
           )}
@@ -2740,7 +2867,9 @@ function OrderCalendarCard({
         {/* Priority & Complexity */}
         <div className="flex items-center gap-1">
           {order.production_priority && order.production_priority !== "normal" && (
-            <span className={`rounded-md px-1.5 py-0.2 font-bold border ${priorityBadge.badgeClass}`}>
+            <span
+              className={`rounded-md px-1.5 py-0.2 font-bold border ${priorityBadge.badgeClass}`}
+            >
               {priorityBadge.label}
             </span>
           )}
@@ -2750,7 +2879,10 @@ function OrderCalendarCard({
         </div>
 
         {/* Readiness indicator dot */}
-        <div className="flex items-center gap-1" title={`${readiness.label} (${paymentInfo.label})`}>
+        <div
+          className="flex items-center gap-1"
+          title={`${readiness.label} (${paymentInfo.label})`}
+        >
           <span className={`h-2 w-2 rounded-full ${readiness.dotClass}`} />
           <span className="text-[10px] text-muted-foreground capitalize truncate max-w-[70px]">
             {order.status.replace(/_/g, " ")}

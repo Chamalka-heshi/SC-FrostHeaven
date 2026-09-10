@@ -86,10 +86,18 @@ const durationResult = calculateAverageProductionDuration(testOrdersWithTimestam
 // Avg of (120 + 210) / 2 = 330 / 2 = 165 minutes = 2h 45m
 assert(durationResult.validOrdersCount === 2, "Valid completed order sample count is 2");
 assert(durationResult.avgMinutes === 165, "Average minutes equals 165 mins");
-assert(durationResult.formattedAvgDuration === "2h 45m", `Formatted duration equals '2h 45m' (got: ${durationResult.formattedAvgDuration})`);
+assert(
+  durationResult.formattedAvgDuration === "2h 45m",
+  `Formatted duration equals '2h 45m' (got: ${durationResult.formattedAvgDuration})`,
+);
 
 const emptyDurationResult = calculateAverageProductionDuration([]);
-assert(emptyDurationResult.validOrdersCount === 0 && emptyDurationResult.avgMinutes === null && emptyDurationResult.formattedAvgDuration === "—", "Empty orders returns safe null duration");
+assert(
+  emptyDurationResult.validOrdersCount === 0 &&
+    emptyDurationResult.avgMinutes === null &&
+    emptyDurationResult.formattedAvgDuration === "—",
+  "Empty orders returns safe null duration",
+);
 
 // ==============================================================================
 // 2. ANALYTICS — PRODUCTION COMPLETION RATE
@@ -99,13 +107,13 @@ console.log("\n--- 2. Production Completion Rate Tests ---");
 const testOrdersForCompletion = [
   { status: "completed" }, // Numerator + Denominator
   { status: "completed" }, // Numerator + Denominator
-  { status: "in_baking" },  // Denominator
-  { status: "ready" },      // Denominator
-  { status: "accepted" },   // Denominator
-  { status: "submitted" },  // EXCLUDED (pre-quote pipeline)
-  { status: "quoted" },     // EXCLUDED (pre-acceptance pipeline)
-  { status: "declined" },   // EXCLUDED (terminal non-production)
-  { status: "cancelled" },  // EXCLUDED (terminal non-production)
+  { status: "in_baking" }, // Denominator
+  { status: "ready" }, // Denominator
+  { status: "accepted" }, // Denominator
+  { status: "submitted" }, // EXCLUDED (pre-quote pipeline)
+  { status: "quoted" }, // EXCLUDED (pre-acceptance pipeline)
+  { status: "declined" }, // EXCLUDED (terminal non-production)
+  { status: "cancelled" }, // EXCLUDED (terminal non-production)
 ];
 
 const completionResult = calculateProductionCompletionRate(testOrdersForCompletion);
@@ -113,7 +121,10 @@ const completionResult = calculateProductionCompletionRate(testOrdersForCompleti
 // Rate = (2 / 5) * 100 = 40%
 assert(completionResult.completedCount === 2, "Completed count is 2");
 assert(completionResult.eligibleCount === 5, "Eligible production count is 5");
-assert(completionResult.ratePercent === 40, `Completion rate is 40% (got: ${completionResult.ratePercent}%)`);
+assert(
+  completionResult.ratePercent === 40,
+  `Completion rate is 40% (got: ${completionResult.ratePercent}%)`,
+);
 
 // ==============================================================================
 // 3. DATA QUALITY — COMPLEXITY SANITIZATION (NO SILENT FABRICATION OF 1.0)
@@ -145,8 +156,16 @@ const ordersWithMissingComplexity = [
 ];
 
 const testCapacitySettings = [{ day_of_week: 4, max_capacity_units: 8.0 }]; // Thursday = 4
-const capResultWithQuality = calculateDailyCapacity("2026-09-10", ordersWithMissingComplexity, testCapacitySettings, []);
-assert(capResultWithQuality.committedWorkloadUnits === 3.0, `Committed workload is strictly 3.0u (got: ${capResultWithQuality.committedWorkloadUnits}u)`);
+const capResultWithQuality = calculateDailyCapacity(
+  "2026-09-10",
+  ordersWithMissingComplexity,
+  testCapacitySettings,
+  [],
+);
+assert(
+  capResultWithQuality.committedWorkloadUnits === 3.0,
+  `Committed workload is strictly 3.0u (got: ${capResultWithQuality.committedWorkloadUnits}u)`,
+);
 assert(capResultWithQuality.hasInvalidComplexity === true, "Flags hasInvalidComplexity = true");
 assert(capResultWithQuality.invalidComplexityOrderCount === 1, "invalidComplexityOrderCount = 1");
 
@@ -156,35 +175,73 @@ assert(capResultWithQuality.invalidComplexityOrderCount === 1, "invalidComplexit
 console.log("\n--- 4. Capacity Threshold Mathematics Tests ---");
 
 // 4/8 = 50% -> within_capacity
-const cap50 = calculateDailyCapacity("2026-09-10", [
-  { id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 4.0 },
-], [{ day_of_week: 4, max_capacity_units: 8.0 }], []);
-assert(cap50.utilizationPercent === 50 && cap50.state === "within_capacity", "4/8 = 50% -> within_capacity");
+const cap50 = calculateDailyCapacity(
+  "2026-09-10",
+  [{ id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 4.0 }],
+  [{ day_of_week: 4, max_capacity_units: 8.0 }],
+  [],
+);
+assert(
+  cap50.utilizationPercent === 50 && cap50.state === "within_capacity",
+  "4/8 = 50% -> within_capacity",
+);
 
 // 6.5/8 = 81.25% -> near_capacity
-const cap81 = calculateDailyCapacity("2026-09-10", [
-  { id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 6.5 },
-], [{ day_of_week: 4, max_capacity_units: 8.0 }], []);
-assert(cap81.utilizationPercent === 81.25 && cap81.state === "near_capacity", "6.5/8 = 81.25% -> near_capacity");
+const cap81 = calculateDailyCapacity(
+  "2026-09-10",
+  [{ id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 6.5 }],
+  [{ day_of_week: 4, max_capacity_units: 8.0 }],
+  [],
+);
+assert(
+  cap81.utilizationPercent === 81.25 && cap81.state === "near_capacity",
+  "6.5/8 = 81.25% -> near_capacity",
+);
 
 // 8.1/8 = 101.25% -> over_capacity
-const cap101 = calculateDailyCapacity("2026-09-10", [
-  { id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 8.1 },
-], [{ day_of_week: 4, max_capacity_units: 8.0 }], []);
+const cap101 = calculateDailyCapacity(
+  "2026-09-10",
+  [{ id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 8.1 }],
+  [{ day_of_week: 4, max_capacity_units: 8.0 }],
+  [],
+);
 assert(cap101.state === "over_capacity", "8.1/8 = 101.25% -> over_capacity");
 
 // Same-day single count rule (Bake + Decorate on same date = 2.5u once)
-const capSameDay = calculateDailyCapacity("2026-09-10", [
-  { id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", scheduled_decorate_date: "2026-09-10", complexity_units: 2.5 },
-], [{ day_of_week: 4, max_capacity_units: 8.0 }], []);
-assert(capSameDay.committedWorkloadUnits === 2.5, `Same day bake+decorate counted once: 2.5u (got: ${capSameDay.committedWorkloadUnits}u)`);
-assert(capSameDay.bakeTaskCount === 1 && capSameDay.decorateTaskCount === 1, "Both bake and decorate tasks tracked");
+const capSameDay = calculateDailyCapacity(
+  "2026-09-10",
+  [
+    {
+      id: "o1",
+      status: "accepted",
+      scheduled_bake_date: "2026-09-10",
+      scheduled_decorate_date: "2026-09-10",
+      complexity_units: 2.5,
+    },
+  ],
+  [{ day_of_week: 4, max_capacity_units: 8.0 }],
+  [],
+);
+assert(
+  capSameDay.committedWorkloadUnits === 2.5,
+  `Same day bake+decorate counted once: 2.5u (got: ${capSameDay.committedWorkloadUnits}u)`,
+);
+assert(
+  capSameDay.bakeTaskCount === 1 && capSameDay.decorateTaskCount === 1,
+  "Both bake and decorate tasks tracked",
+);
 
 // Blackout date closure
-const capBlackout = calculateDailyCapacity("2026-09-10", [
-  { id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 2.0 },
-], [{ day_of_week: 4, max_capacity_units: 8.0 }], [{ blackout_date: "2026-09-10", reason: "National Holiday" }]);
-assert(capBlackout.state === "blackout" && capBlackout.hasBlackoutConflict === true, "Blackout date properly flagged with conflict");
+const capBlackout = calculateDailyCapacity(
+  "2026-09-10",
+  [{ id: "o1", status: "accepted", scheduled_bake_date: "2026-09-10", complexity_units: 2.0 }],
+  [{ day_of_week: 4, max_capacity_units: 8.0 }],
+  [{ blackout_date: "2026-09-10", reason: "National Holiday" }],
+);
+assert(
+  capBlackout.state === "blackout" && capBlackout.hasBlackoutConflict === true,
+  "Blackout date properly flagged with conflict",
+);
 
 // ==============================================================================
 // 5. STAFF WORKLOAD ALLOCATION & SOFT GUIDELINE (6.0u)
@@ -215,10 +272,25 @@ const staffOrders = [
   },
 ];
 
-const staffWorkloads = calculateStaffDailyWorkload("2026-09-10", "staff-1", "Amara Perera", staffOrders, 6.0);
-assert(staffWorkloads.totalPhysicalWorkloadUnits === 7.0, `Staff physical workload is 7.0u (got: ${staffWorkloads.totalPhysicalWorkloadUnits}u)`);
-assert(staffWorkloads.state === "overloaded", `Staff state is 'overloaded' against 6.0u guideline (got: ${staffWorkloads.state})`);
-assert(staffWorkloads.bakeTaskCount === 2 && staffWorkloads.decorateTaskCount === 1, "Bake and decorate task counts verified");
+const staffWorkloads = calculateStaffDailyWorkload(
+  "2026-09-10",
+  "staff-1",
+  "Amara Perera",
+  staffOrders,
+  6.0,
+);
+assert(
+  staffWorkloads.totalPhysicalWorkloadUnits === 7.0,
+  `Staff physical workload is 7.0u (got: ${staffWorkloads.totalPhysicalWorkloadUnits}u)`,
+);
+assert(
+  staffWorkloads.state === "overloaded",
+  `Staff state is 'overloaded' against 6.0u guideline (got: ${staffWorkloads.state})`,
+);
+assert(
+  staffWorkloads.bakeTaskCount === 2 && staffWorkloads.decorateTaskCount === 1,
+  "Bake and decorate task counts verified",
+);
 
 // ==============================================================================
 // 6. CSV EXPORT UTILITY (RFC-4180 Escaping & UTF-8 BOM)
@@ -234,7 +306,10 @@ assert(formatCsvValue(undefined) === "", "Undefined formatted as empty string");
 
 const sampleCsv = generateCsvContent(
   ["Order ID", "Customer", "Price (LKR)"],
-  [["#101", 'John "Jack" Doe', 15000], ["#102", "Jane, Mary", 25000]]
+  [
+    ["#101", 'John "Jack" Doe', 15000],
+    ["#102", "Jane, Mary", 25000],
+  ],
 );
 assert(sampleCsv.startsWith("\uFEFF"), "CSV content starts with UTF-8 BOM (\\uFEFF)");
 assert(sampleCsv.includes('"John ""Jack"" Doe"'), "CSV correctly escapes inner double quotes");
@@ -247,7 +322,10 @@ console.log("\n--- 7. Timezone & Local Date Formatting Tests ---");
 
 const testDate = new Date(2026, 8, 10, 23, 45, 0); // 10th September 2026 at 11:45 PM local
 const localYMD = getLocalDateString(testDate);
-assert(localYMD === "2026-09-10", `getLocalDateString produces '2026-09-10' without UTC shifting (got: ${localYMD})`);
+assert(
+  localYMD === "2026-09-10",
+  `getLocalDateString produces '2026-09-10' without UTC shifting (got: ${localYMD})`,
+);
 
 // ==============================================================================
 // 8. SUMMARY

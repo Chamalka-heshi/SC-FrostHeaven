@@ -2419,7 +2419,8 @@ function AdminOrdersPage() {
                         Kitchen Scheduling & Staff Assignment
                       </h4>
                       <p className="text-[11px] text-muted-foreground">
-                        Assign Baker & Decorator, schedule bake/decorate dates, and set workload units
+                        Assign Baker & Decorator, schedule bake/decorate dates, and set workload
+                        units
                       </p>
                     </div>
                   </div>
@@ -2572,7 +2573,9 @@ function AdminOrdersPage() {
                 <div className="space-y-2 rounded-2xl bg-card p-3.5 border border-border/70">
                   <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                     <span>Complexity / Workload Units:</span>
-                    <span className="text-primary font-bold">{Number(orderComplexity).toFixed(1)} Units</span>
+                    <span className="text-primary font-bold">
+                      {Number(orderComplexity).toFixed(1)} Units
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -2584,9 +2587,27 @@ function AdminOrdersPage() {
                     className="w-full accent-primary cursor-pointer"
                   />
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <button type="button" onClick={() => setOrderComplexity(1.0)} className="hover:text-primary cursor-pointer">1.0u (Standard)</button>
-                    <button type="button" onClick={() => setOrderComplexity(2.0)} className="hover:text-primary cursor-pointer">2.0u (2-Tier)</button>
-                    <button type="button" onClick={() => setOrderComplexity(4.0)} className="hover:text-primary cursor-pointer">4.0u (3+ Tiers)</button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderComplexity(1.0)}
+                      className="hover:text-primary cursor-pointer"
+                    >
+                      1.0u (Standard)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderComplexity(2.0)}
+                      className="hover:text-primary cursor-pointer"
+                    >
+                      2.0u (2-Tier)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderComplexity(4.0)}
+                      className="hover:text-primary cursor-pointer"
+                    >
+                      4.0u (3+ Tiers)
+                    </button>
                   </div>
                 </div>
 
@@ -2596,44 +2617,55 @@ function AdminOrdersPage() {
                   const bakerStaff = staffList.find((s) => s.id === orderBakerId);
                   const decoratorStaff = staffList.find((s) => s.id === orderDecoratorId);
 
-                  const bakerPreview = orderBakerId && orderBakeDate && bakerStaff
-                    ? previewStaffAssignmentImpact(
-                        orderBakeDate,
-                        orderBakerId,
-                        getStaffDisplayName(bakerStaff),
-                        selectedOrder.id,
-                        orderComplexity,
-                        "baker",
-                        orders as any
-                      )
-                    : null;
+                  const bakerPreview =
+                    orderBakerId && orderBakeDate && bakerStaff
+                      ? previewStaffAssignmentImpact(
+                          orderBakeDate,
+                          orderBakerId,
+                          getStaffDisplayName(bakerStaff),
+                          selectedOrder.id,
+                          orderComplexity,
+                          "baker",
+                          orders as any,
+                        )
+                      : null;
 
-                  const decoratorPreview = orderDecoratorId && orderDecorateDate && decoratorStaff
-                    ? previewStaffAssignmentImpact(
-                        orderDecorateDate,
-                        orderDecoratorId,
-                        getStaffDisplayName(decoratorStaff),
-                        selectedOrder.id,
-                        orderComplexity,
-                        "decorator",
-                        orders as any
-                      )
-                    : null;
+                  const decoratorPreview =
+                    orderDecoratorId && orderDecorateDate && decoratorStaff
+                      ? previewStaffAssignmentImpact(
+                          orderDecorateDate,
+                          orderDecoratorId,
+                          getStaffDisplayName(decoratorStaff),
+                          selectedOrder.id,
+                          orderComplexity,
+                          "decorator",
+                          orders as any,
+                        )
+                      : null;
 
-                  if (!bakerPreview?.warningMessage && !decoratorPreview?.warningMessage) return null;
+                  if (!bakerPreview?.warningMessage && !decoratorPreview?.warningMessage)
+                    return null;
 
                   return (
                     <div className="space-y-2 pt-1">
                       {bakerPreview?.warningMessage && (
-                        <div className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${bakerPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}>
+                        <div
+                          className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${bakerPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}
+                        >
                           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
-                          <span><strong>Baker:</strong> {bakerPreview.warningMessage}</span>
+                          <span>
+                            <strong>Baker:</strong> {bakerPreview.warningMessage}
+                          </span>
                         </div>
                       )}
                       {decoratorPreview?.warningMessage && (
-                        <div className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${decoratorPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}>
+                        <div
+                          className={`flex items-start gap-1.5 rounded-xl p-2.5 text-[11px] ${decoratorPreview.isOverloaded ? "bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20" : "bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-500/20"}`}
+                        >
                           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-amber-500" />
-                          <span><strong>Decorator:</strong> {decoratorPreview.warningMessage}</span>
+                          <span>
+                            <strong>Decorator:</strong> {decoratorPreview.warningMessage}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -2820,7 +2852,9 @@ function AdminOrdersPage() {
           }
           decoratorName={
             staffList.find((s) => s.id === ticketOrder.assigned_decorator_id)
-              ? getStaffDisplayName(staffList.find((s) => s.id === ticketOrder.assigned_decorator_id))
+              ? getStaffDisplayName(
+                  staffList.find((s) => s.id === ticketOrder.assigned_decorator_id),
+                )
               : undefined
           }
           onClose={() => setTicketOrder(null)}

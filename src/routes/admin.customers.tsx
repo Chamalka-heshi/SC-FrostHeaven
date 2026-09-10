@@ -235,7 +235,9 @@ function AdminCustomersPage() {
           initialOrdersRes.error.message?.includes("quoted_price_lkr") ||
           initialOrdersRes.error.message?.includes("does not exist"))
       ) {
-        console.warn("Structured payment columns not detected on custom_orders. Falling back to base columns.");
+        console.warn(
+          "Structured payment columns not detected on custom_orders. Falling back to base columns.",
+        );
         const fallbackRes = await supabase
           .from("custom_orders")
           .select(
@@ -1251,20 +1253,36 @@ function AdminCustomersPage() {
                           {quoted > 0 && (
                             <div className="rounded-xl border border-border/50 bg-background/60 p-2.5 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
                               <div>
-                                <span className="text-[10px] text-muted-foreground block">Quoted Total:</span>
-                                <span className="font-bold text-foreground">{formatLKR(quoted)}</span>
+                                <span className="text-[10px] text-muted-foreground block">
+                                  Quoted Total:
+                                </span>
+                                <span className="font-bold text-foreground">
+                                  {formatLKR(quoted)}
+                                </span>
                               </div>
                               <div>
-                                <span className="text-[10px] text-muted-foreground block">Deposit Req:</span>
-                                <span className="font-medium text-foreground">{depositReq > 0 ? formatLKR(depositReq) : "None"}</span>
+                                <span className="text-[10px] text-muted-foreground block">
+                                  Deposit Req:
+                                </span>
+                                <span className="font-medium text-foreground">
+                                  {depositReq > 0 ? formatLKR(depositReq) : "None"}
+                                </span>
                               </div>
                               <div>
-                                <span className="text-[10px] text-muted-foreground block">Paid:</span>
-                                <span className="font-bold text-emerald-700">{formatLKR(paid)}</span>
+                                <span className="text-[10px] text-muted-foreground block">
+                                  Paid:
+                                </span>
+                                <span className="font-bold text-emerald-700">
+                                  {formatLKR(paid)}
+                                </span>
                               </div>
                               <div>
-                                <span className="text-[10px] text-muted-foreground block">Balance:</span>
-                                <span className={`font-bold ${balance > 0 ? "text-amber-700" : "text-muted-foreground"}`}>
+                                <span className="text-[10px] text-muted-foreground block">
+                                  Balance:
+                                </span>
+                                <span
+                                  className={`font-bold ${balance > 0 ? "text-amber-700" : "text-muted-foreground"}`}
+                                >
                                   {formatLKR(balance)}
                                 </span>
                               </div>

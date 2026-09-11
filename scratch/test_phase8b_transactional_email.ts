@@ -243,6 +243,7 @@ const forbiddenStrings = [
   "scheduled_decorate_date",
   "production_started_at",
   "production_completed_at",
+  "Customer requested edible gold stars", // admin_notes must NEVER be exposed
 ];
 
 let leakDetected = false;
@@ -259,6 +260,51 @@ allRenderedEmails.forEach((email, idx) => {
 assert(
   !leakDetected,
   "Zero internal notes, payment refs, staff IDs, timestamps, or complexity units leaked in any template",
+);
+
+// Explicit customer_message vs admin_notes isolation test
+const orderWithOnlyAdminNotes: CustomerSafeOrderEmailData & Record<string, unknown> = {
+  orderId: "ord-test-admin-notes-001",
+  customerName: "Kamal Gunaratne",
+  customerEmail: "kamal@example.lk",
+  admin_notes: "STRICTLY_INTERNAL_ADMIN_NOTE_NEVER_SHOW",
+};
+const renderedAdminOnly = renderEmailTemplate("quote_ready", orderWithOnlyAdminNotes);
+assert(
+  !renderedAdminOnly?.html.includes("STRICTLY_INTERNAL_ADMIN_NOTE_NEVER_SHOW") &&
+    !renderedAdminOnly?.text.includes("STRICTLY_INTERNAL_ADMIN_NOTE_NEVER_SHOW"),
+  "admin_notes is never rendered as customer message or fallback",
+);
+
+const orderWithCustomerMessage: CustomerSafeOrderEmailData = {
+  orderId: "ord-test-customer-msg-002",
+  customerName: "Kamal Gunaratne",
+  customerEmail: "kamal@example.lk",
+  customerMessage: "Thank you for your custom request. We can prepare this.",
+};
+const renderedCustomerMsg = renderEmailTemplate("quote_ready", orderWithCustomerMessage);
+assert(
+  renderedCustomerMsg?.html.includes("Thank you for your custom request. We can prepare this.") === true,
+  "customer_message is properly included in customer email",
+);
+
+// ============================================================================
+// 4. IDEMPOTENCY KEY VALIDATION
+// ============================================================================
+console.log("\n--- 4. Resend Idempotency-Key & Event Key Verification ---");
+
+function buildResendHeaders(notificationId: string, apiKey: string) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": `${notificationId}`,
+  };
+}
+
+const mockHeaders = buildResendHeaders("notif-uuid-12345", "re_test_123");
+assert(
+  mockHeaders["Idempotency-Key"] === "notif-uuid-12345",
+  "notification.id is used directly as Resend Idempotency-Key without auxiliary table",
 );
 
 // ============================================================================

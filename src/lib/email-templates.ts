@@ -39,7 +39,6 @@ export interface CustomerSafeOrderEmailData {
   paymentStatus?: string | null | undefined;
   targetPickupTime?: string | null | undefined;
   customerMessage?: string | null | undefined;
-  adminNotes?: string | null | undefined;
 }
 
 export interface RenderedEmail {
@@ -206,7 +205,7 @@ export function renderEmailTemplate(
   const customerName = data.customerName || "Valued Customer";
   const eventType = data.eventType || "Celebration";
   const eventDateFormatted = formatEmailDate(data.eventDate);
-  const customerMessage = data.customerMessage || data.adminNotes;
+  const customerMessage = data.customerMessage;
 
   switch (type) {
     // 1. Quote Ready

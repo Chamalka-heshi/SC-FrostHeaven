@@ -28,9 +28,9 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
 const DEFAULT_SITE_URL = "https://scfrostheaven.com";
-const DEFAULT_FROM_EMAIL = "SC Frost Heaven <orders@scfrostheaven.com>";
+const DEFAULT_FROM_EMAIL = "SC Frost Heaven <scfrostheaven@gmail.com>";
 const BAKERY_PHONE = "+94 76 123 4567";
-const BAKERY_EMAIL = "hello@scfrostheaven.com";
+const BAKERY_EMAIL = "scfrostheaven@gmail.com";
 const BAKERY_LOCATION = "Sri Lanka";
 
 interface WebhookRecord {
@@ -547,6 +547,37 @@ serve(async (req: Request) => {
     });
   }
 
+  // 2. Server-to-Server Authentication Boundary
+  // Validates incoming secret API key (from apikey, x-api-key, or Authorization: Bearer <secret>)
+  const incomingApiKey =
+    req.headers.get("apikey") ||
+    req.headers.get("x-api-key") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
+
+  const expectedServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const expectedSecretKeys = Deno.env.get("SUPABASE_SECRET_KEYS") || "";
+  const expectedWebhookSecret = Deno.env.get("WEBHOOK_SECRET") || "";
+  const expectedAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const expectedPublishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "";
+
+  const isValidCaller = Boolean(
+    incomingApiKey &&
+      ((expectedWebhookSecret && incomingApiKey === expectedWebhookSecret) ||
+        (expectedServiceRoleKey && incomingApiKey === expectedServiceRoleKey) ||
+        (expectedSecretKeys && expectedSecretKeys.includes(incomingApiKey)) ||
+        (expectedAnonKey && incomingApiKey === expectedAnonKey) ||
+        (expectedPublishableKeys && expectedPublishableKeys.includes(incomingApiKey))),
+  );
+
+  if (!isValidCaller) {
+    console.warn("[TRANSACTIONAL_EMAIL] Security Guard: Unauthorized caller rejected.");
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const payload: WebhookPayload = await req.json();
 
@@ -727,6 +758,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         from: fromEmail,
         to: [recipientEmail],
+        reply_to: BAKERY_EMAIL,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,

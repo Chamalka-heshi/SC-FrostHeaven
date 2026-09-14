@@ -548,26 +548,15 @@ serve(async (req: Request) => {
   }
 
   // 2. Server-to-Server Authentication Boundary
-  // Validates incoming secret API key (from apikey, x-api-key, or Authorization: Bearer <secret>)
-  const incomingApiKey =
-    req.headers.get("apikey") ||
-    req.headers.get("x-api-key") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    "";
-
-  const expectedServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  const expectedSecretKeys = Deno.env.get("SUPABASE_SECRET_KEYS") || "";
+  // Validates incoming dedicated internal webhook secret from the `apikey` header only.
+  // Rejects public anon keys, publishable keys, user JWTs, and arbitrary headers.
+  const incomingApiKey = req.headers.get("apikey") || "";
   const expectedWebhookSecret = Deno.env.get("WEBHOOK_SECRET") || "";
-  const expectedAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const expectedPublishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "";
 
   const isValidCaller = Boolean(
     incomingApiKey &&
-      ((expectedWebhookSecret && incomingApiKey === expectedWebhookSecret) ||
-        (expectedServiceRoleKey && incomingApiKey === expectedServiceRoleKey) ||
-        (expectedSecretKeys && expectedSecretKeys.includes(incomingApiKey)) ||
-        (expectedAnonKey && incomingApiKey === expectedAnonKey) ||
-        (expectedPublishableKeys && expectedPublishableKeys.includes(incomingApiKey))),
+      expectedWebhookSecret &&
+      incomingApiKey === expectedWebhookSecret,
   );
 
   if (!isValidCaller) {

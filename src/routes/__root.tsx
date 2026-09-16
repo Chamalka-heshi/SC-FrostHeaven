@@ -375,8 +375,13 @@ function Footer() {
             <address className="not-italic text-sm text-muted-foreground space-y-2">
               <p>Sri Lanka</p>
               <p>
-                <a href="mailto:hello@scfrostheaven.com" className="hover:text-primary">
-                  hello@scfrostheaven.com
+                <a href="mailto:scfrostheaven@gmail.com" className="hover:text-primary">
+                  scfrostheaven@gmail.com
+                </a>
+              </p>
+              <p>
+                <a href="tel:+94702411623" className="hover:text-primary">
+                  +94 70 241 1623
                 </a>
               </p>
             </address>

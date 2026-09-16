@@ -1777,7 +1777,7 @@ function AdminOrdersPage() {
                     href={getEmailMailtoUrl(
                       selectedOrder.customer_email,
                       `SC FrostHeaven — Custom Cake Order #${selectedOrder.id.slice(0, 8).toUpperCase()}`,
-                      `Hello ${selectedOrder.customer_name},\n\nThank you for choosing SC FrostHeaven for your custom cake order (#${selectedOrder.id.slice(0, 8).toUpperCase()}).\n\n\nWarm regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+                      `Hello ${selectedOrder.customer_name},\n\nThank you for choosing SC FrostHeaven for your custom cake order (#${selectedOrder.id.slice(0, 8).toUpperCase()}).\n\n\nWarm regards,\nSC FrostHeaven Team\nscfrostheaven@gmail.com\n+94 70 241 1623`,
                     )}
                     className="inline-flex items-center gap-1.5 rounded-full bg-secondary/80 hover:bg-secondary text-foreground px-3.5 py-1.5 text-xs font-semibold border border-border/70 transition-colors shadow-xs"
                   >

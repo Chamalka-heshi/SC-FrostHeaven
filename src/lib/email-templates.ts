@@ -52,7 +52,7 @@ export interface EmailRenderOptions {
 }
 
 export const DEFAULT_SITE_URL = "https://scfrostheaven.com";
-export const BAKERY_PHONE = "+94 76 123 4567";
+export const BAKERY_PHONE = "+94 70 241 1623";
 export const BAKERY_EMAIL = "scfrostheaven@gmail.com";
 export const BAKERY_LOCATION = "Sri Lanka";
 

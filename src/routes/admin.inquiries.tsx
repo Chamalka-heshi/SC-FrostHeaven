@@ -216,7 +216,7 @@ function AdminInquiriesPage() {
       const mailtoUrl = getEmailMailtoUrl(
         inquiry.email,
         `Re: SC FrostHeaven Inquiry from ${inquiry.name}`,
-        `Hi ${inquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${inquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+        `Hi ${inquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${inquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nscfrostheaven@gmail.com\n+94 70 241 1623`,
       );
       window.location.href = mailtoUrl;
     } catch (err: unknown) {
@@ -1028,7 +1028,7 @@ function AdminInquiriesPage() {
                       href={getEmailMailtoUrl(
                         selectedInquiry.email,
                         `Re: SC FrostHeaven Inquiry from ${selectedInquiry.name}`,
-                        `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nhello@scfrostheaven.com\n+94 76 123 4567`,
+                        `Hi ${selectedInquiry.name},\n\nThank you for reaching out to SC FrostHeaven!\n\nIn reference to your inquiry:\n"${selectedInquiry.message}"\n\n\nBest regards,\nSC FrostHeaven Team\nscfrostheaven@gmail.com\n+94 70 241 1623`,
                       )}
                       className="inline-flex items-center justify-center gap-1.5 rounded-full bg-secondary hover:bg-secondary/80 text-foreground border border-border/70 px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer shadow-xs"
                     >

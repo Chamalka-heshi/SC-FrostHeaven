@@ -111,8 +111,8 @@ function ContactPage() {
             <div>
               <h3 className="font-medium text-foreground">Email</h3>
               <p className="text-muted-foreground">
-                <a href="mailto:hello@scfrostheaven.com" className="hover:text-primary">
-                  hello@scfrostheaven.com
+                <a href="mailto:scfrostheaven@gmail.com" className="hover:text-primary">
+                  scfrostheaven@gmail.com
                 </a>
               </p>
             </div>
@@ -124,7 +124,11 @@ function ContactPage() {
             </div>
             <div>
               <h3 className="font-medium text-foreground">Phone</h3>
-              <p className="text-muted-foreground">+94 76 123 4567</p>
+              <p className="text-muted-foreground">
+                <a href="tel:+94702411623" className="hover:text-primary">
+                  +94 70 241 1623
+                </a>
+              </p>
             </div>
           </div>
 

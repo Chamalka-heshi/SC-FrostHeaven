@@ -29,7 +29,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.112.4";
 
 const DEFAULT_SITE_URL = "https://scfrostheaven.com";
 const DEFAULT_FROM_EMAIL = "SC Frost Heaven <scfrostheaven@gmail.com>";
-const BAKERY_PHONE = "+94 76 123 4567";
+const BAKERY_PHONE = "+94 70 241 1623";
 const BAKERY_EMAIL = "scfrostheaven@gmail.com";
 const BAKERY_LOCATION = "Sri Lanka";
 

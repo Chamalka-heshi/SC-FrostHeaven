@@ -252,19 +252,27 @@ export const CartDrawer = () => {
                 </div>
                 <Button
                   onClick={handleCheckout}
-                  className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                  className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                   size="lg"
                   disabled={items.length === 0 || isLoading || isSyncing}
                 >
                   {isLoading || isSyncing ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
+                  ) : items.every((i) => i.variantId.startsWith("gid://shopify/")) && getCheckoutUrl()?.includes("myshopify.com") ? (
                     <>
                       <ExternalLink className="w-4 h-4 mr-2" />
                       Checkout with Shopify
                     </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4 mr-2" />
+                      Proceed to Order / WhatsApp
+                    </>
                   )}
                 </Button>
+                <p className="text-[11px] text-center text-muted-foreground">
+                  Order directly via official hotline: +94 70 241 1623
+                </p>
               </div>
             </>
           )}

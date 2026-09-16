@@ -6,6 +6,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
+import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
+
+async function getAllProducts(): Promise<ShopifyProduct[]> {
+  try {
+    const [menuItems, shopifyProducts] = await Promise.all([
+      fetchMenuItems(true),
+      fetchProducts(100).catch((err) => {
+        console.warn("Shopify fetch notice:", err);
+        return [] as ShopifyProduct[];
+      }),
+    ]);
+
+    const localProducts = (menuItems || []).map(menuItemToShopifyProduct);
+    const seenHandles = new Set<string>();
+    const combined: ShopifyProduct[] = [];
+
+    for (const p of localProducts) {
+      if (!seenHandles.has(p.node.handle)) {
+        seenHandles.add(p.node.handle);
+        combined.push(p);
+      }
+    }
+
+    for (const p of shopifyProducts) {
+      if (!seenHandles.has(p.node.handle)) {
+        seenHandles.add(p.node.handle);
+        combined.push(p);
+      }
+    }
+
+    return combined;
+  } catch (error) {
+    console.error("Failed to load products:", error);
+    const menuItems = await fetchMenuItems(true);
+    return (menuItems || []).map(menuItemToShopifyProduct);
+  }
+}
 
 export const Route = createFileRoute("/menu")({
   head: () => ({
@@ -26,8 +63,8 @@ export const Route = createFileRoute("/menu")({
   }),
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData({
-      queryKey: ["products", "all"],
-      queryFn: () => fetchProducts(100),
+      queryKey: ["products", "all-menu"],
+      queryFn: getAllProducts,
     });
   },
   component: MenuPage,
@@ -55,8 +92,8 @@ function getProductCategory(product: ShopifyProduct): string {
 
 function MenuPage() {
   const { data: products } = useSuspenseQuery<ShopifyProduct[]>({
-    queryKey: ["products", "all"],
-    queryFn: () => fetchProducts(100),
+    queryKey: ["products", "all-menu"],
+    queryFn: getAllProducts,
   });
 
   const [searchQuery, setSearchQuery] = useState("");

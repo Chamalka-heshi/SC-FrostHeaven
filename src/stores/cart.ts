@@ -114,9 +114,29 @@ export const useCartStore = create<CartStore>()(
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
         const existingItem = items.find((i) => i.variantId === item.variantId);
+        const isShopifyItem = item.variantId.startsWith("gid://shopify/");
 
         set({ isLoading: true });
         try {
+          if (!isShopifyItem) {
+            // Local / Supabase Bakery Item
+            if (existingItem) {
+              const newQuantity = existingItem.quantity + item.quantity;
+              set({
+                items: items.map((i) =>
+                  i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i,
+                ),
+              });
+            } else {
+              const localLineId = `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+              set({
+                items: [...items, { ...item, lineId: localLineId }],
+              });
+            }
+            return;
+          }
+
+          // Shopify Item
           if (!cartId) {
             const result = await createShopifyCart({ ...item, lineId: null });
             if (result) {
@@ -174,7 +194,17 @@ export const useCartStore = create<CartStore>()(
 
         const { items, cartId, clearCart } = get();
         const item = items.find((i) => i.variantId === variantId);
-        if (!item?.lineId || !cartId) return;
+        if (!item) return;
+
+        const isShopifyItem = variantId.startsWith("gid://shopify/");
+        if (!isShopifyItem) {
+          set({
+            items: items.map((i) => (i.variantId === variantId ? { ...i, quantity } : i)),
+          });
+          return;
+        }
+
+        if (!item.lineId || !cartId) return;
 
         set({ isLoading: true });
         try {
@@ -197,7 +227,20 @@ export const useCartStore = create<CartStore>()(
       removeItem: async (variantId) => {
         const { items, cartId, clearCart } = get();
         const item = items.find((i) => i.variantId === variantId);
-        if (!item?.lineId || !cartId) return;
+        if (!item) return;
+
+        const isShopifyItem = variantId.startsWith("gid://shopify/");
+        if (!isShopifyItem) {
+          const newItems = items.filter((i) => i.variantId !== variantId);
+          if (newItems.length === 0) {
+            clearCart();
+          } else {
+            set({ items: newItems });
+          }
+          return;
+        }
+
+        if (!item.lineId || !cartId) return;
 
         set({ isLoading: true });
         try {
@@ -229,7 +272,37 @@ export const useCartStore = create<CartStore>()(
           deliveryZoneVariantId: null,
           fulfillmentMethod: "pickup",
         }),
-      getCheckoutUrl: () => get().checkoutUrl,
+      getCheckoutUrl: () => {
+        const { items, checkoutUrl, fulfillmentMethod, deliveryZoneVariantId, getDeliveryFee } = get();
+        if (items.length === 0) return null;
+
+        const hasOnlyShopifyItems = items.every((i) => i.variantId.startsWith("gid://shopify/"));
+        if (hasOnlyShopifyItems && checkoutUrl) {
+          return checkoutUrl;
+        }
+
+        // WhatsApp Checkout Direct Link for SC Frost Heaven (+94 70 241 1623)
+        const zone = fulfillmentMethod === "delivery" ? getZoneByVariantId(deliveryZoneVariantId) : null;
+        const deliveryFee = getDeliveryFee();
+        const totalPrice = items.reduce(
+          (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
+          0,
+        );
+        const grandTotal = (totalPrice + deliveryFee).toFixed(2);
+
+        let msg = `🍰 *Order from SC Frost Heaven*\n\n`;
+        items.forEach((it, idx) => {
+          msg += `${idx + 1}. *${it.product.node.title}* x ${it.quantity} — LKR ${(parseFloat(it.price.amount) * it.quantity).toFixed(2)}\n`;
+        });
+        msg += `\n*Fulfillment:* ${fulfillmentMethod === "delivery" ? `Delivery (${zone?.label || "Standard"} - ${zone?.area || ""})` : "Store Pickup"}`;
+        if (deliveryFee > 0) {
+          msg += `\n*Delivery Fee:* LKR ${deliveryFee.toFixed(2)}`;
+        }
+        msg += `\n*Total Amount:* LKR ${grandTotal}`;
+        msg += `\n\nPlease confirm availability and payment options for this order. Thank you!`;
+
+        return `https://wa.me/94702411623?text=${encodeURIComponent(msg)}`;
+      },
 
       syncCart: async () => {
         const { cartId, isSyncing, clearCart } = get();

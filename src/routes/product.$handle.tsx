@@ -5,9 +5,22 @@ import { Button } from "@/components/ui/button";
 import { ShoppingBag, Minus, Plus } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
 import { fetchProductByHandle, type ShopifyProduct } from "@/lib/shopify";
+import { fetchMenuItemBySlug, menuItemToShopifyProduct } from "@/lib/menu-api";
+import { toast } from "sonner";
 
 async function getProduct(handle: string): Promise<NonNullable<ShopifyProduct["node"]>> {
-  const product = await fetchProductByHandle(handle);
+  // 1. Check Supabase menu_items first
+  try {
+    const menuItem = await fetchMenuItemBySlug(handle);
+    if (menuItem) {
+      return menuItemToShopifyProduct(menuItem).node;
+    }
+  } catch (err) {
+    console.warn("Supabase menu item lookup note:", err);
+  }
+
+  // 2. Fallback to Shopify
+  const product = await fetchProductByHandle(handle).catch(() => null);
   if (!product) throw notFound();
   return product;
 }
@@ -55,6 +68,9 @@ function ProductDetailPage() {
       price: variant.price,
       quantity,
       selectedOptions: variant.selectedOptions || [],
+    });
+    toast.success(`Added ${quantity}x "${product.title}" to cart`, {
+      description: `${variant.price.currencyCode} ${(parseFloat(variant.price.amount) * quantity).toFixed(2)}`,
     });
   };
 

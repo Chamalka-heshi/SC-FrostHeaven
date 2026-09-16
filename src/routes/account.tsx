@@ -183,40 +183,13 @@ function AccountPage() {
     setOrdersError(null);
 
     try {
-      const { data: initialData, error } = await supabase
-        .from("customer_custom_orders")
-        .select(
-          "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
-        )
-        .eq("customer_id", user.id)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("get_my_custom_orders");
 
-      let data = initialData;
-
-      if (
-        error &&
-        (error.code === "PGRST205" ||
-          error.code === "42703" ||
-          error.message?.includes("customer_custom_orders") ||
-          error.message?.includes("does not exist"))
-      ) {
-        console.warn(
-          "customer_custom_orders view not available. Falling back to custom_orders table.",
-        );
-        const fallbackRes = await supabase
-          .from("custom_orders")
-          .select(
-            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, created_at, updated_at",
-          )
-          .eq("customer_id", user.id)
-          .order("created_at", { ascending: false });
-        if (fallbackRes.error) throw fallbackRes.error;
-        data = (fallbackRes.data || []) as unknown as typeof data;
-      } else if (error) {
+      if (error) {
         throw error;
       }
 
-      setOrders(data || []);
+      setOrders((data as CustomOrder[]) || []);
     } catch (err: unknown) {
       console.error("Error loading customer orders:", err);
       setOrdersError(err instanceof Error ? err.message : "Failed to load your orders");

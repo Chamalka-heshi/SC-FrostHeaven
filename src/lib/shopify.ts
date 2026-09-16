@@ -152,34 +152,37 @@ const PRODUCT_BY_HANDLE_QUERY = `
 `;
 
 export async function storefrontApiRequest(query: string, variables: Record<string, unknown> = {}) {
-  const response = await fetch(SHOPIFY_STOREFRONT_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Storefront-Access-Token": SHOPIFY_STOREFRONT_TOKEN,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-
-  if (response.status === 402) {
-    toast.error("Shopify: Payment required", {
-      description:
-        "Shopify API access requires an active Shopify billing plan. Visit https://admin.shopify.com to upgrade.",
+  try {
+    const response = await fetch(SHOPIFY_STOREFRONT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Storefront-Access-Token": SHOPIFY_STOREFRONT_TOKEN,
+      },
+      body: JSON.stringify({ query, variables }),
     });
+
+    if (!response.ok) {
+      if (response.status === 402) {
+        console.warn("Shopify Storefront billing notice");
+      } else {
+        console.warn(`Shopify storefront HTTP status: ${response.status}`);
+      }
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.errors) {
+      console.warn("Shopify storefront GraphQL errors:", data.errors);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.warn("Shopify storefront request error:", error);
     return null;
   }
-
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.errors) {
-    throw new Error(`Error calling Shopify: ${data.errors.map((e: { message: string }) => e.message).join(", ")}`);
-  }
-
-  return data;
 }
 
 export async function fetchProducts(first = 100, query?: string): Promise<ShopifyProduct[]> {

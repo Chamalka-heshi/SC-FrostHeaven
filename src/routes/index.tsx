@@ -3,7 +3,40 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
+import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
 import heroCake from "@/assets/hero-cake.jpg";
+
+async function getFeaturedProducts(): Promise<ShopifyProduct[]> {
+  try {
+    const [menuItems, shopifyProducts] = await Promise.all([
+      fetchMenuItems(true).catch(() => []),
+      fetchProducts(6).catch(() => [] as ShopifyProduct[]),
+    ]);
+
+    const localProducts = (menuItems || []).map(menuItemToShopifyProduct);
+    const seenHandles = new Set<string>();
+    const combined: ShopifyProduct[] = [];
+
+    for (const p of localProducts) {
+      if (!seenHandles.has(p.node.handle)) {
+        seenHandles.add(p.node.handle);
+        combined.push(p);
+      }
+    }
+
+    for (const p of shopifyProducts) {
+      if (!seenHandles.has(p.node.handle)) {
+        seenHandles.add(p.node.handle);
+        combined.push(p);
+      }
+    }
+
+    return combined.slice(0, 6);
+  } catch (error) {
+    console.warn("Failed to load featured products:", error);
+    return [];
+  }
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,7 +60,7 @@ export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData({
       queryKey: ["products", "featured"],
-      queryFn: () => fetchProducts(6),
+      queryFn: getFeaturedProducts,
     });
   },
   component: HomePage,
@@ -36,7 +69,7 @@ export const Route = createFileRoute("/")({
 function HomePage() {
   const { data: products } = useSuspenseQuery<ShopifyProduct[]>({
     queryKey: ["products", "featured"],
-    queryFn: () => fetchProducts(6),
+    queryFn: getFeaturedProducts,
   });
 
   return (

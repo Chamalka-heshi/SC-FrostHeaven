@@ -11,7 +11,10 @@ import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
 async function getAllProducts(): Promise<ShopifyProduct[]> {
   try {
     const [menuItems, shopifyProducts] = await Promise.all([
-      fetchMenuItems(true),
+      fetchMenuItems(true).catch((err) => {
+        console.warn("Menu items fetch notice:", err);
+        return [];
+      }),
       fetchProducts(100).catch((err) => {
         console.warn("Shopify fetch notice:", err);
         return [] as ShopifyProduct[];
@@ -38,9 +41,8 @@ async function getAllProducts(): Promise<ShopifyProduct[]> {
 
     return combined;
   } catch (error) {
-    console.error("Failed to load products:", error);
-    const menuItems = await fetchMenuItems(true);
-    return (menuItems || []).map(menuItemToShopifyProduct);
+    console.warn("Failed to load products:", error);
+    return [];
   }
 }
 

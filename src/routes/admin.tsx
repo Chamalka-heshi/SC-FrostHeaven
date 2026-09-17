@@ -100,7 +100,7 @@ function AdminLayout() {
       <aside className="hidden w-64 flex-col border-r border-border/80 bg-card lg:flex">
         {/* Sidebar Header */}
         <div className="flex h-20 items-center gap-3 border-b border-border/60 px-6">
-          <img src={logo} alt="SC Frost Heaven" className="h-10 w-auto" />
+          <img src={logo} alt="SC Frost Heaven" className="h-12 w-auto object-contain rounded-xl" />
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-primary">
               Admin Portal
@@ -169,7 +169,7 @@ function AdminLayout() {
           <div className="relative flex w-72 max-w-xs flex-col bg-card border-r border-border shadow-soft z-50 p-6">
             <div className="flex items-center justify-between pb-6 border-b border-border/60">
               <div className="flex items-center gap-2.5">
-                <img src={logo} alt="SC Frost Heaven" className="h-9 w-auto" />
+                <img src={logo} alt="SC Frost Heaven" className="h-10 w-auto object-contain rounded-xl" />
                 <div>
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
                     Admin Portal

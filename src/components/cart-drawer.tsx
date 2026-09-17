@@ -9,7 +9,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { ShoppingCart, Minus, Plus, Trash2, ExternalLink, Loader2, Store, Truck, Clock } from "lucide-react";
+import { ShoppingCart, ShoppingBag, Minus, Plus, Trash2, ExternalLink, Loader2, Store, Truck, Clock } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
 import { DELIVERY_ZONES, PICKUP_INFO } from "@/lib/fulfillment";
 

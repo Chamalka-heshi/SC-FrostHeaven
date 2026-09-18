@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
 import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
+import { createPageMeta, createBakeryJsonLd } from "@/lib/seo";
 import heroCake from "@/assets/hero-cake.jpg";
 
 async function getFeaturedProducts(): Promise<ShopifyProduct[]> {
@@ -39,24 +40,25 @@ async function getFeaturedProducts(): Promise<ShopifyProduct[]> {
 }
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "SC Frost Heaven — Custom Cakes & Sweet Moments" },
-      {
-        name: "description",
-        content:
-          "Elegant custom cakes, cupcakes, and desserts handcrafted for birthdays, weddings, and celebrations in Sri Lanka.",
-      },
-      { property: "og:title", content: "SC Frost Heaven — Custom Cakes & Sweet Moments" },
-      {
-        property: "og:description",
-        content:
-          "Elegant custom cakes, cupcakes, and desserts handcrafted for birthdays, weddings, and celebrations.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "SC Frost Heaven — Custom Cakes & Sweet Moments",
+      description:
+        "Elegant custom cakes, cupcakes, and desserts handcrafted for birthdays, weddings, and celebrations in Sri Lanka.",
+      path: "/",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(createBakeryJsonLd()),
+        },
+      ],
+    };
+  },
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData({
       queryKey: ["products", "featured"],

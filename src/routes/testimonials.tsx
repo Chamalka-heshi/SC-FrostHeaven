@@ -4,24 +4,33 @@ import { Star, MessageSquare, Loader2, Sparkles, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { ReviewSubmissionModal } from "@/components/review-submission-modal";
+import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 
 export const Route = createFileRoute("/testimonials")({
-  head: () => ({
-    meta: [
-      { title: "Testimonials — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Read what customers say about SC Frost Heaven cakes and desserts handcrafted in Sri Lanka.",
-      },
-      { property: "og:title", content: "Testimonials — SC Frost Heaven" },
-      {
-        property: "og:description",
-        content: "Read what customers say about SC Frost Heaven cakes and desserts handcrafted in Sri Lanka.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "Customer Testimonials & Reviews — SC Frost Heaven",
+      description:
+        "Read real customer reviews and testimonials about our custom cakes, dessert tables, and bakery services handcrafted in Sri Lanka.",
+      path: "/testimonials",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(
+            createBreadcrumbJsonLd([
+              { name: "Home", path: "/" },
+              { name: "Testimonials", path: "/testimonials" },
+            ])
+          ),
+        },
+      ],
+    };
+  },
   component: TestimonialsPage,
 });
 

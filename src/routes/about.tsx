@@ -1,24 +1,33 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 import heroCake from "@/assets/hero-cake.jpg";
 
 export const Route = createFileRoute("/about")({
-  head: () => ({
-    meta: [
-      { title: "About — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Learn about SC Frost Heaven, a handcrafted cake boutique in Sri Lanka.",
-      },
-      { property: "og:title", content: "About — SC Frost Heaven" },
-      {
-        property: "og:description",
-        content: "Learn about SC Frost Heaven, a handcrafted cake boutique in Sri Lanka.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "About Us — SC Frost Heaven",
+      description:
+        "Learn about SC Frost Heaven, our passion for handcrafted artisanal baking, and our commitment to making every celebration sweet and memorable in Sri Lanka.",
+      path: "/about",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(
+            createBreadcrumbJsonLd([
+              { name: "Home", path: "/" },
+              { name: "About Us", path: "/about" },
+            ])
+          ),
+        },
+      ],
+    };
+  },
   component: AboutPage,
 });
 
@@ -36,7 +45,7 @@ function AboutPage() {
         <div className="aspect-[4/3] overflow-hidden rounded-3xl shadow-soft">
           <img
             src={heroCake}
-            alt="Beautifully decorated cake from SC Frost Heaven"
+            alt="Artisanal celebration cake with handcrafted floral decorations by SC Frost Heaven"
             className="h-full w-full object-cover"
             width={1536}
             height={1024}

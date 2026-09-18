@@ -8,24 +8,33 @@ import { Mail, MapPin, Phone, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 
 export const Route = createFileRoute("/contact")({
-  head: () => ({
-    meta: [
-      { title: "Contact — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Get in touch with SC Frost Heaven for orders, questions, and custom cake inquiries.",
-      },
-      { property: "og:title", content: "Contact — SC Frost Heaven" },
-      {
-        property: "og:description",
-        content: "Get in touch with SC Frost Heaven for orders, questions, and custom cake inquiries.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "Contact Us — SC Frost Heaven",
+      description:
+        "Get in touch with SC Frost Heaven for custom cake inquiries, wedding cake consultations, and orders in Sri Lanka. Phone: +94 70 241 1623, Email: scfrostheaven@gmail.com.",
+      path: "/contact",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(
+            createBreadcrumbJsonLd([
+              { name: "Home", path: "/" },
+              { name: "Contact Us", path: "/contact" },
+            ])
+          ),
+        },
+      ],
+    };
+  },
   component: ContactPage,
 });
 

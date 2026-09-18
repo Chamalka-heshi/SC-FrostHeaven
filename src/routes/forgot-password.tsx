@@ -6,17 +6,10 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, MailCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { createNoIndexMeta } from "@/lib/seo";
 
 export const Route = createFileRoute("/forgot-password")({
-  head: () => ({
-    meta: [
-      { title: "Forgot Password — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Reset your SC Frost Heaven account password.",
-      },
-    ],
-  }),
+  head: () => createNoIndexMeta("Forgot Password"),
   component: ForgotPasswordPage,
 });
 

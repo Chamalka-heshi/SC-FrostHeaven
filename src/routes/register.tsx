@@ -7,17 +7,10 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { createNoIndexMeta } from "@/lib/seo";
 
 export const Route = createFileRoute("/register")({
-  head: () => ({
-    meta: [
-      { title: "Register — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Create an account with SC Frost Heaven to track your orders and save your favorites.",
-      },
-    ],
-  }),
+  head: () => createNoIndexMeta("Register"),
   component: RegisterPage,
 });
 

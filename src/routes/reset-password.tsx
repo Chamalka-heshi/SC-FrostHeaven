@@ -7,17 +7,10 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, KeyRound, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { createNoIndexMeta } from "@/lib/seo";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({
-    meta: [
-      { title: "Reset Password — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Set a new password for your SC Frost Heaven account.",
-      },
-    ],
-  }),
+  head: () => createNoIndexMeta("Reset Password"),
   component: ResetPasswordPage,
 });
 

@@ -6,6 +6,12 @@ import { ShoppingBag, Minus, Plus } from "lucide-react";
 import { useCartStore } from "@/stores/cart";
 import { fetchProductByHandle, type ShopifyProduct } from "@/lib/shopify";
 import { fetchMenuItemBySlug, menuItemToShopifyProduct } from "@/lib/menu-api";
+import {
+  createPageMeta,
+  createProductJsonLd,
+  createBreadcrumbJsonLd,
+  SITE_URL,
+} from "@/lib/seo";
 import { toast } from "sonner";
 
 async function getProduct(handle: string): Promise<NonNullable<ShopifyProduct["node"]>> {
@@ -26,16 +32,58 @@ async function getProduct(handle: string): Promise<NonNullable<ShopifyProduct["n
 }
 
 export const Route = createFileRoute("/product/$handle")({
-  head: ({ params }) => ({
-    meta: [
-      { title: `Product — SC Frost Heaven` },
-      { name: "description", content: "Handcrafted cake from SC Frost Heaven" },
-      { property: "og:title", content: `Product — SC Frost Heaven` },
-      { property: "og:description", content: "Handcrafted cake from SC Frost Heaven" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: ({ loaderData, params }) => {
+    const product = loaderData as NonNullable<ShopifyProduct["node"]> | undefined;
+    const title = product?.title
+      ? `${product.title} — SC Frost Heaven`
+      : "Product — SC Frost Heaven";
+    const description =
+      product?.description ||
+      (product?.title
+        ? `Order handcrafted ${product.title} online from SC Frost Heaven. Freshly baked in Sri Lanka with premium ingredients.`
+        : "Handcrafted cakes, cupcakes, and desserts from SC Frost Heaven in Sri Lanka.");
+    const ogImage = product?.images?.edges?.[0]?.node?.url || `${SITE_URL}/logo.png`;
+
+    const { meta, links } = createPageMeta({
+      title,
+      description,
+      path: `/product/${params.handle}`,
+      ogImage,
+      ogType: "product",
+    });
+
+    const scripts: Array<{ type: string; children: string }> = [];
+
+    if (product) {
+      const productSchema = createProductJsonLd(product, params.handle);
+      if (productSchema) {
+        scripts.push({
+          type: "application/ld+json",
+          children: JSON.stringify(productSchema),
+        });
+      }
+    }
+
+    scripts.push({
+      type: "application/ld+json",
+      children: JSON.stringify(
+        createBreadcrumbJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Menu", path: "/menu" },
+          {
+            name: product?.title || params.handle,
+            path: `/product/${params.handle}`,
+          },
+        ])
+      ),
+    });
+
+    return {
+      meta,
+      links,
+      scripts,
+    };
+  },
   loader: async ({ context, params }) => {
     return context.queryClient.ensureQueryData({
       queryKey: ["product", params.handle],

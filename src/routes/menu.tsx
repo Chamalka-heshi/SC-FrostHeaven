@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
 import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
+import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 
 async function getAllProducts(): Promise<ShopifyProduct[]> {
   try {
@@ -47,22 +48,30 @@ async function getAllProducts(): Promise<ShopifyProduct[]> {
 }
 
 export const Route = createFileRoute("/menu")({
-  head: () => ({
-    meta: [
-      { title: "Menu — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Browse our handcrafted cakes, cupcakes, and desserts available for online ordering.",
-      },
-      { property: "og:title", content: "Menu — SC Frost Heaven" },
-      {
-        property: "og:description",
-        content: "Browse our handcrafted cakes, cupcakes, and desserts available for online ordering.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "Menu & Online Ordering — SC Frost Heaven",
+      description:
+        "Browse our handcrafted cakes, cupcakes, cookies, and desserts in Sri Lanka. Order online for delivery or bakery pickup.",
+      path: "/menu",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(
+            createBreadcrumbJsonLd([
+              { name: "Home", path: "/" },
+              { name: "Menu", path: "/menu" },
+            ])
+          ),
+        },
+      ],
+    };
+  },
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData({
       queryKey: ["products", "all-menu"],

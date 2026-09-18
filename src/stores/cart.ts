@@ -137,46 +137,71 @@ export const useCartStore = create<CartStore>()(
           }
 
           // Shopify Item
-          if (!cartId) {
-            const result = await createShopifyCart({ ...item, lineId: null });
-            if (result) {
-              set({
-                cartId: result.cartId,
-                checkoutUrl: result.checkoutUrl,
-                items: [{ ...item, lineId: result.lineId }],
-                deliveryLineId: null,
-              });
-              const { fulfillmentMethod, deliveryZoneVariantId } = get();
-              if (fulfillmentMethod === "delivery") {
-                await get().setFulfillment("delivery", deliveryZoneVariantId);
+          let added = false;
+          try {
+            if (!cartId) {
+              const result = await createShopifyCart({ ...item, lineId: null });
+              if (result) {
+                set({
+                  cartId: result.cartId,
+                  checkoutUrl: result.checkoutUrl,
+                  items: [{ ...item, lineId: result.lineId }],
+                  deliveryLineId: null,
+                });
+                added = true;
+                const { fulfillmentMethod, deliveryZoneVariantId } = get();
+                if (fulfillmentMethod === "delivery") {
+                  await get().setFulfillment("delivery", deliveryZoneVariantId);
+                }
+              }
+            } else if (existingItem) {
+              const newQuantity = existingItem.quantity + item.quantity;
+              if (existingItem.lineId && !existingItem.lineId.startsWith("line_")) {
+                const result = await updateShopifyCartLine(cartId, existingItem.lineId, newQuantity);
+                if (result.success) {
+                  const currentItems = get().items;
+                  set({
+                    items: currentItems.map((i) =>
+                      i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i,
+                    ),
+                  });
+                  added = true;
+                } else if (result.cartNotFound) {
+                  clearCart();
+                }
+              }
+            } else {
+              const result = await addLineToShopifyCart(cartId, { ...item, lineId: null });
+              if (result.success) {
+                const currentItems = get().items;
+                set({
+                  items: [...currentItems, { ...item, lineId: result.lineId ?? null }],
+                });
+                added = true;
+              } else if (result.cartNotFound) {
+                clearCart();
               }
             }
-          } else if (existingItem) {
-            const newQuantity = existingItem.quantity + item.quantity;
-            if (!existingItem.lineId) {
-              console.error("Cannot update quantity for item without lineId:", existingItem);
-              return;
-            }
-            const result = await updateShopifyCartLine(cartId, existingItem.lineId, newQuantity);
-            if (result.success) {
-              const currentItems = get().items;
+          } catch (err) {
+            console.warn("Shopify cart update error:", err);
+          }
+
+          // Fallback: If Shopify couldn't process the variant (e.g. inventory 0 or unbilled), still add to cart locally
+          if (!added) {
+            const currentItems = get().items;
+            const currentExisting = currentItems.find((i) => i.variantId === item.variantId);
+            if (currentExisting) {
+              const newQuantity = currentExisting.quantity + item.quantity;
               set({
                 items: currentItems.map((i) =>
                   i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i,
                 ),
               });
-            } else if (result.cartNotFound) {
-              clearCart();
-            }
-          } else {
-            const result = await addLineToShopifyCart(cartId, { ...item, lineId: null });
-            if (result.success) {
-              const currentItems = get().items;
+            } else {
+              const fallbackLineId = `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
               set({
-                items: [...currentItems, { ...item, lineId: result.lineId ?? null }],
+                items: [...currentItems, { ...item, lineId: fallbackLineId }],
               });
-            } else if (result.cartNotFound) {
-              clearCart();
             }
           }
         } catch (error) {

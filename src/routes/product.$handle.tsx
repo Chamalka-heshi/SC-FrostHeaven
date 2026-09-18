@@ -131,18 +131,14 @@ function ProductDetailPage() {
               </div>
               <Button
                 onClick={handleAddToCart}
-                disabled={isLoading || !variant.availableForSale}
+                disabled={isLoading}
                 size="lg"
-                className="flex-1 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                className="flex-1 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
               >
                 <ShoppingBag className="mr-2 h-5 w-5" />
                 {isLoading ? "Adding..." : "Add to Cart"}
               </Button>
             </div>
-          )}
-
-          {!variant?.availableForSale && (
-            <p className="mt-4 text-sm text-destructive">This product is currently unavailable.</p>
           )}
         </div>
       </div>

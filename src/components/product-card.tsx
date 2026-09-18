@@ -77,7 +77,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </span>
           <Button
             onClick={handleAddToCart}
-            disabled={isLoading || !variant || !variant.availableForSale}
+            disabled={isLoading || !variant}
             size="sm"
             className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
           >

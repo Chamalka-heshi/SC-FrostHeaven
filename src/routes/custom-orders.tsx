@@ -7,26 +7,33 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2, Upload, X, ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 
 export const Route = createFileRoute("/custom-orders")({
-  head: () => ({
-    meta: [
-      { title: "Custom Orders — SC Frost Heaven" },
-      {
-        name: "description",
-        content:
-          "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
-      },
-      { property: "og:title", content: "Custom Orders — SC Frost Heaven" },
-      {
-        property: "og:description",
-        content:
-          "Request a custom cake from SC Frost Heaven. Tell us your vision and we'll bring it to life.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = createPageMeta({
+      title: "Custom Cake Orders — SC Frost Heaven",
+      description:
+        "Design and order your dream custom cake with SC Frost Heaven. Share your vision, preferred flavors, and event date for bespoke celebration cakes in Sri Lanka.",
+      path: "/custom-orders",
+    });
+
+    return {
+      meta,
+      links,
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify(
+            createBreadcrumbJsonLd([
+              { name: "Home", path: "/" },
+              { name: "Custom Orders", path: "/custom-orders" },
+            ])
+          ),
+        },
+      ],
+    };
+  },
   component: CustomOrdersPage,
 });
 
@@ -386,7 +393,7 @@ function CustomOrdersPage() {
                     >
                       <img
                         src={previews[index]?.url}
-                        alt={file.name}
+                        alt={file.name || `Reference image ${index + 1}`}
                         className="h-full w-full object-cover"
                       />
                       <button

@@ -19,6 +19,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CartDrawer } from "@/components/cart-drawer";
 import { useCartSync } from "@/hooks/use-cart-sync";
 import { NotificationCenter } from "@/components/notification-center";
+import { createBakeryJsonLd, BUSINESS_INFO } from "@/lib/seo";
 
 const navLinks = [
   { to: "/", label: "Home" },
@@ -118,6 +119,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "theme-color", content: "#FFF5F5" },
       { title: "SC Frost Heaven — Custom Cakes & Sweet Moments" },
       {
         name: "description",
@@ -129,11 +131,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "Elegant custom cakes, cupcakes, and desserts handcrafted for birthdays, weddings, and celebrations.",
+          "Elegant custom cakes, cupcakes, and desserts handcrafted for birthdays, weddings, and celebrations in Sri Lanka.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "SC Frost Heaven" },
+      { property: "og:image", content: BUSINESS_INFO.logo },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@SCFrostHeaven" },
+      { name: "twitter:image", content: BUSINESS_INFO.logo },
     ],
     links: [
       {
@@ -141,6 +146,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", type: "image/png", href: "/favicon.png" },
+      { rel: "apple-touch-icon", href: "/favicon.png" },
+      { rel: "manifest", href: "/site.webmanifest" },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify(createBakeryJsonLd()),
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -189,7 +202,7 @@ function Header() {
         <Link to="/" className="flex items-center gap-3">
           <img
             src={logo}
-            alt="SC Frost Heaven"
+            alt="SC Frost Heaven Bakery Logo"
             className="h-14 w-auto object-contain rounded-xl"
             width={1024}
             height={1024}
@@ -370,7 +383,7 @@ function Footer() {
           <div>
             <img
               src={logo}
-              alt="SC Frost Heaven"
+              alt="SC Frost Heaven Bakery Logo"
               className="mb-4 h-20 w-auto object-contain rounded-2xl"
               width={1024}
               height={1024}

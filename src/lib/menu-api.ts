@@ -235,11 +235,11 @@ export async function updateMenuItem(
   };
 
   if (imageUrl !== undefined) {
-    payload.image_url = imageUrl;
+    payload["image_url"] = imageUrl;
   }
 
   if (updates.price_lkr !== undefined) {
-    payload.price_lkr = Math.max(0, Math.round(updates.price_lkr));
+    payload["price_lkr"] = Math.max(0, Math.round(updates.price_lkr));
   }
 
   const { data, error } = await supabase

@@ -42,20 +42,13 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { ReviewSubmissionModal } from "@/components/review-submission-modal";
 import { CustomOrderTimeline, STATUS_LABELS } from "@/components/custom-order-timeline";
+import { createNoIndexMeta } from "@/lib/seo";
 
 export const Route = createFileRoute("/account")({
   validateSearch: (search: Record<string, unknown>): { orderId?: string | undefined } => ({
     orderId: typeof search["orderId"] === "string" ? search["orderId"] : undefined,
   }),
-  head: () => ({
-    meta: [
-      { title: "My Account — SC Frost Heaven" },
-      {
-        name: "description",
-        content: "Manage your SC Frost Heaven customer profile and custom cake orders.",
-      },
-    ],
-  }),
+  head: () => createNoIndexMeta("My Account"),
   component: AccountPage,
 });
 

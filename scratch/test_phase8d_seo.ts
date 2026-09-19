@@ -58,6 +58,8 @@ assert(bakerySchema.name === "SC Frost Heaven", `Bakery name is SC Frost Heaven`
 assert(bakerySchema.telephone === "+94702411623", `Bakery phone matches +94702411623`);
 assert(bakerySchema.email === "scfrostheaven@gmail.com", `Bakery email matches scfrostheaven@gmail.com`);
 assert(bakerySchema.address.addressCountry === "LK", `Bakery country is LK`);
+assert(bakerySchema.address.addressLocality === "Mirissa", `Bakery locality is Mirissa`);
+assert(bakerySchema.address.streetAddress === '"Chamathka", Wilegodawaththa, Henwala', `Bakery streetAddress is Chamathka, Wilegodawaththa, Henwala`);
 // Validate JSON serialization
 const serializedBakery = JSON.stringify(bakerySchema);
 assert(JSON.parse(serializedBakery)["@type"] === "Bakery", "Bakery JSON-LD serializes and deserializes cleanly");

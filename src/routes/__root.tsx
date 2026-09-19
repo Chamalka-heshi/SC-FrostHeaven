@@ -410,7 +410,8 @@ function Footer() {
           <div>
             <h3 className="mb-4 text-sm font-semibold text-foreground">Contact</h3>
             <address className="not-italic text-sm text-muted-foreground space-y-2">
-              <p>Sri Lanka</p>
+              <p className="font-medium text-foreground">"Chamathka", Wilegodawaththa, Henwala, Mirissa</p>
+              <p>Matara District, Sri Lanka</p>
               <p>
                 <a href="mailto:scfrostheaven@gmail.com" className="hover:text-primary">
                   scfrostheaven@gmail.com

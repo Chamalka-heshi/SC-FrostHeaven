@@ -180,7 +180,7 @@ export const CartDrawer = () => {
                       <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Truck className="h-4 w-4" /> Delivery
                       </span>
-                      <span className="mt-1 block text-xs text-muted-foreground">From LKR 500</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">From LKR 300</span>
                     </button>
                   </div>
 

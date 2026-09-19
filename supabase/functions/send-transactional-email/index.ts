@@ -31,7 +31,7 @@ const DEFAULT_SITE_URL = "https://scfrostheaven.com";
 const DEFAULT_FROM_EMAIL = "SC Frost Heaven <scfrostheaven@gmail.com>";
 const BAKERY_PHONE = "+94 70 241 1623";
 const BAKERY_EMAIL = "scfrostheaven@gmail.com";
-const BAKERY_LOCATION = "Sri Lanka";
+const BAKERY_LOCATION = '"Chamathka", Wilegodawaththa, Henwala, Mirissa, Matara District, Sri Lanka';
 
 interface WebhookRecord {
   id?: string;

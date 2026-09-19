@@ -146,8 +146,9 @@ function ContactPage() {
               <MapPin className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-medium text-foreground">Location</h3>
-              <p className="text-muted-foreground">Sri Lanka</p>
+              <h3 className="font-medium text-foreground">Location & Bakery Kitchen</h3>
+              <p className="text-muted-foreground">"Chamathka", Wilegodawaththa, Henwala, Mirissa</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Matara District, Southern Province, Sri Lanka</p>
             </div>
           </div>
         </div>

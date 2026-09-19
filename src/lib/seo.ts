@@ -26,8 +26,11 @@ export const BUSINESS_INFO = {
   displayTelephone: "+94 70 241 1623",
   address: {
     "@type": "PostalAddress",
+    streetAddress: '"Chamathka", Wilegodawaththa, Henwala',
+    addressLocality: "Mirissa",
+    addressRegion: "Matara District, Southern Province",
+    postalCode: "81740",
     addressCountry: "LK",
-    addressLocality: "Sri Lanka",
   },
   geo: {
     "@type": "GeoCoordinates",

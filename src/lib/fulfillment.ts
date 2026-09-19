@@ -11,37 +11,29 @@ export interface DeliveryZone {
 
 export const PICKUP_INFO = {
   label: "Pickup",
-  address: "SC Frost Heaven Kitchen, Colombo",
+  address: '"Chamathka", Wilegodawaththa, Henwala, Mirissa',
   eta: "Ready in 24–48 hours",
   hours: "Pickup window: 9:00 AM – 6:00 PM daily",
   fee: 0,
 };
 
-// Shopify "Delivery" product (handle: delivery) variant IDs
+// Delivery Zones (Within Matara: Rs. 300, Outside Matara / Islandwide: Rs. 500)
 export const DELIVERY_ZONES: DeliveryZone[] = [
   {
-    id: "colombo",
-    label: "Colombo City",
-    area: "Colombo 1–15",
+    id: "matara-district",
+    label: "Within Matara District",
+    area: "Mirissa, Weligama, Matara, Dikwella, Kamburugamuwa & all areas within Matara District",
     variantId: "gid://shopify/ProductVariant/62239369199986",
-    fee: 500,
-    eta: "Same day or next day (2–4 hrs slot)",
+    fee: 300,
+    eta: "Same day or next day delivery",
   },
   {
-    id: "greater-colombo",
-    label: "Greater Colombo",
-    area: "Dehiwala, Nugegoda, Kotte, Wattala, Moratuwa",
+    id: "outside-matara",
+    label: "Areas Away from Matara",
+    area: "Galle, Hambantota, Colombo & Islandwide delivery",
     variantId: "gid://shopify/ProductVariant/62239369232754",
-    fee: 900,
-    eta: "Next day delivery (1–2 days)",
-  },
-  {
-    id: "islandwide",
-    label: "Islandwide",
-    area: "Rest of Sri Lanka",
-    variantId: "gid://shopify/ProductVariant/62239369265522",
-    fee: 1500,
-    eta: "2–3 working days",
+    fee: 500,
+    eta: "1–3 business days",
   },
 ];
 

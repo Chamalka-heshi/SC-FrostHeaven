@@ -5,6 +5,7 @@ import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
 import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
 import { createPageMeta, createWebSiteJsonLd } from "@/lib/seo";
+import { TestimonialsCarousel } from "@/components/testimonials-carousel";
 import heroCake from "@/assets/hero-cake.jpg";
 
 async function getFeaturedProducts(): Promise<ShopifyProduct[]> {
@@ -160,6 +161,9 @@ function HomePage() {
           </Button>
         </div>
       </section>
+
+      {/* Customer Testimonials & Reviews Carousel */}
+      <TestimonialsCarousel />
 
       {/* About Teaser */}
       <section className="bg-cream">

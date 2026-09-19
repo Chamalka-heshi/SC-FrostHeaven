@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { createNoIndexMeta } from "@/lib/seo";
 
@@ -14,21 +15,49 @@ function AuthCallbackPage() {
 
   useEffect(() => {
     const handleCallback = async () => {
-      // Check for code exchange if PKCE is used or session from hash
-      const { data, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error("Auth callback error:", error);
-        navigate({ to: "/login" });
-        return;
-      }
+      try {
+        // 1. Check for provider error parameters in search or hash
+        const urlParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const errorDescription =
+          urlParams.get("error_description") ||
+          hashParams.get("error_description") ||
+          urlParams.get("error") ||
+          hashParams.get("error");
 
-      const hash = window.location.hash;
-      if (hash.includes("type=recovery")) {
-        navigate({ to: "/reset-password" });
-      } else if (data.session) {
-        navigate({ to: "/" });
-      } else {
+        if (errorDescription) {
+          console.warn("OAuth provider callback error:", errorDescription);
+          toast.error(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
+          navigate({ to: "/login" });
+          return;
+        }
+
+        // 2. Check for password recovery flow
+        const hash = window.location.hash;
+        if (hash.includes("type=recovery")) {
+          navigate({ to: "/reset-password" });
+          return;
+        }
+
+        // 3. Complete code exchange / retrieve active session
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error("Auth callback error:", error);
+          toast.error("Authentication failed. Please try logging in again.");
+          navigate({ to: "/login" });
+          return;
+        }
+
+        if (data.session) {
+          toast.success("Welcome to SC Frost Heaven!");
+          navigate({ to: "/" });
+        } else {
+          navigate({ to: "/login" });
+        }
+      } catch (err) {
+        console.error("Unexpected callback exception:", err);
+        toast.error("An unexpected error occurred during authentication.");
         navigate({ to: "/login" });
       }
     };

@@ -693,7 +693,7 @@ function AccountPage() {
               </div>
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
                 <Mail className="h-3.5 w-3.5" />
-                {user.email}
+                {user.email || profile?.email || "No email provided"}
               </p>
             </div>
           </div>
@@ -1344,7 +1344,9 @@ function AccountPage() {
                   <Mail className="h-5 w-5 text-primary mt-0.5" />
                   <div>
                     <span className="text-xs font-medium text-muted-foreground">Email Address</span>
-                    <p className="text-sm font-medium text-foreground">{user.email}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {user.email || profile?.email || "No email provided"}
+                    </p>
                   </div>
                 </div>
 

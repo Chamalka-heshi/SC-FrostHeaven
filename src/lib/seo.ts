@@ -179,6 +179,23 @@ export function createBakeryJsonLd() {
 }
 
 /**
+ * Structured Data: WebSite Schema
+ */
+export function createWebSiteJsonLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": `${SITE_URL}/#website`,
+    name: BUSINESS_INFO.name,
+    url: SITE_URL,
+    description: BUSINESS_INFO.description,
+    publisher: {
+      "@id": `${SITE_URL}/#bakery`,
+    },
+  };
+}
+
+/**
  * Structured Data: Product Schema
  * Derives accurately from Shopify and Supabase data.
  */

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/product-card";
 import { fetchProducts, type ShopifyProduct } from "@/lib/shopify";
 import { fetchMenuItems, menuItemToShopifyProduct } from "@/lib/menu-api";
-import { createPageMeta, createBakeryJsonLd } from "@/lib/seo";
+import { createPageMeta, createWebSiteJsonLd } from "@/lib/seo";
 import heroCake from "@/assets/hero-cake.jpg";
 
 async function getFeaturedProducts(): Promise<ShopifyProduct[]> {
@@ -54,7 +54,7 @@ export const Route = createFileRoute("/")({
       scripts: [
         {
           type: "application/ld+json",
-          children: JSON.stringify(createBakeryJsonLd()),
+          children: JSON.stringify(createWebSiteJsonLd()),
         },
       ],
     };

@@ -5,6 +5,7 @@ import {
   createPageMeta,
   createNoIndexMeta,
   createBakeryJsonLd,
+  createWebSiteJsonLd,
   createProductJsonLd,
   createBreadcrumbJsonLd,
 } from "../src/lib/seo";
@@ -50,7 +51,7 @@ const noIndexMeta = createNoIndexMeta("Admin Dashboard");
 assert(noIndexMeta.meta.some((m) => m.name === "robots" && m.content === "noindex, nofollow"), "Noindex meta present");
 assert(noIndexMeta.meta.some((m) => m.title === "Admin Dashboard — SC Frost Heaven"), "Noindex title properly suffixed");
 
-console.log("\n=== 3. Testing Bakery JSON-LD Schema ===");
+console.log("\n=== 3. Testing Bakery & WebSite JSON-LD Schema ===");
 const bakerySchema = createBakeryJsonLd();
 assert(bakerySchema["@type"] === "Bakery", `Bakery schema @type is Bakery`);
 assert(bakerySchema.name === "SC Frost Heaven", `Bakery name is SC Frost Heaven`);
@@ -60,6 +61,11 @@ assert(bakerySchema.address.addressCountry === "LK", `Bakery country is LK`);
 // Validate JSON serialization
 const serializedBakery = JSON.stringify(bakerySchema);
 assert(JSON.parse(serializedBakery)["@type"] === "Bakery", "Bakery JSON-LD serializes and deserializes cleanly");
+
+const websiteSchema = createWebSiteJsonLd();
+assert(websiteSchema["@type"] === "WebSite", "WebSite schema @type is WebSite");
+assert(websiteSchema["@id"] === `${SITE_URL}/#website`, "WebSite @id matches canonical #website");
+assert(websiteSchema.publisher["@id"] === `${SITE_URL}/#bakery`, "WebSite publisher links cleanly to Bakery entity");
 
 console.log("\n=== 4. Testing Product JSON-LD Schema ===");
 const mockProduct = {

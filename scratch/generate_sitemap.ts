@@ -11,6 +11,7 @@ async function generateSitemap() {
     { loc: "/", priority: "1.0", changefreq: "daily" },
     { loc: "/menu", priority: "0.9", changefreq: "daily" },
     { loc: "/custom-orders", priority: "0.8", changefreq: "weekly" },
+    { loc: "/track-order", priority: "0.8", changefreq: "weekly" },
     { loc: "/about", priority: "0.7", changefreq: "monthly" },
     { loc: "/testimonials", priority: "0.7", changefreq: "weekly" },
     { loc: "/contact", priority: "0.6", changefreq: "monthly" },

@@ -101,15 +101,14 @@ function ProductDetailPage() {
   });
 
   const addItem = useCartStore((state) => state.addItem);
-  const isLoading = useCartStore((state) => state.isLoading);
   const [quantity, setQuantity] = useState(1);
 
   const variant = product.variants.edges[0]?.node;
   const image = product.images.edges[0]?.node;
 
-  const handleAddToCart = async () => {
+  const handleAddToCart = () => {
     if (!variant) return;
-    await addItem({
+    addItem({
       product: { node: product },
       variantId: variant.id,
       variantTitle: variant.title,
@@ -179,12 +178,12 @@ function ProductDetailPage() {
               </div>
               <Button
                 onClick={handleAddToCart}
-                disabled={isLoading}
+                disabled={!variant}
                 size="lg"
                 className="flex-1 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
               >
                 <ShoppingBag className="mr-2 h-5 w-5" />
-                {isLoading ? "Adding..." : "Add to Cart"}
+                Add to Cart
               </Button>
             </div>
           )}

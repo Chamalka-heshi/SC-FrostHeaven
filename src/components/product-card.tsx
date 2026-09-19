@@ -12,14 +12,13 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const addItem = useCartStore((state) => state.addItem);
-  const isLoading = useCartStore((state) => state.isLoading);
   const variant = product.node.variants.edges[0]?.node;
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
+  const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!variant) return;
-    await addItem({
+    addItem({
       product,
       variantId: variant.id,
       variantTitle: variant.title,
@@ -77,12 +76,12 @@ export function ProductCard({ product }: ProductCardProps) {
           </span>
           <Button
             onClick={handleAddToCart}
-            disabled={isLoading || !variant}
+            disabled={!variant}
             size="sm"
             className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
           >
             <ShoppingBag className="mr-2 h-4 w-4" />
-            {isLoading ? "Adding..." : "Add to Cart"}
+            Add to Cart
           </Button>
         </div>
       </div>

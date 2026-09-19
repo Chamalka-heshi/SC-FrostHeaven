@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Upload, X, ImageIcon } from "lucide-react";
+import { Loader2, Upload, X, ImageIcon, CheckCircle2, Copy, Check, ArrowRight, Sparkles, Phone } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import { createPageMeta, createBreadcrumbJsonLd } from "@/lib/seo";
 
 export const Route = createFileRoute("/custom-orders")({
@@ -46,9 +47,17 @@ interface ImagePreview {
 }
 
 function CustomOrdersPage() {
+  const { user, profile } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<ImagePreview[]>([]);
+  const [submittedOrder, setSubmittedOrder] = useState<{
+    id: string;
+    event: string;
+    date: string;
+    contact?: string;
+  } | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Clean up object URLs when previews change or component unmounts
@@ -57,6 +66,13 @@ function CustomOrdersPage() {
       previews.forEach((p) => URL.revokeObjectURL(p.url));
     };
   }, [previews]);
+
+  const handleCopyOrderId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(true);
+    toast.success("Order reference copied to clipboard");
+    setTimeout(() => setCopiedId(false), 2000);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -116,6 +132,7 @@ function CustomOrdersPage() {
 
     const name = ((formData.get("name") as string) || "").trim();
     const email = ((formData.get("email") as string) || "").trim();
+    const phone = ((formData.get("phone") as string) || "").trim();
     const event = ((formData.get("event") as string) || "").trim();
     const date = ((formData.get("date") as string) || "").trim();
     const details = ((formData.get("details") as string) || "").trim();
@@ -165,10 +182,10 @@ function CustomOrdersPage() {
     try {
       // Check current Supabase auth session
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser();
 
-      const customerId = user?.id ?? null;
+      const customerId = currentUser?.id ?? user?.id ?? null;
 
       // 1. Generate the custom order UUID before inserting
       const orderId = crypto.randomUUID();
@@ -179,7 +196,7 @@ function CustomOrdersPage() {
         customer_id: customerId,
         customer_name: name,
         customer_email: email.toLowerCase(),
-        customer_phone: null,
+        customer_phone: phone || null,
         event_type: event,
         event_date: date,
         cake_details: details,
@@ -257,9 +274,14 @@ function CustomOrdersPage() {
         toast.success("Custom order request sent! We'll be in touch soon.");
       }
 
-      // 3. Reset form and file selection after successful order completion
+      // 3. Clear files and set submitted state
       clearFiles();
-      form.reset();
+      setSubmittedOrder({
+        id: orderId,
+        event,
+        date,
+        contact: email.trim(),
+      });
     } catch (err) {
       console.error("Unexpected error submitting custom order:", err);
       toast.error("An unexpected error occurred. Please try again.");
@@ -277,42 +299,146 @@ function CustomOrdersPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="name">Your Name</Label>
-            <Input
-              id="name"
-              name="name"
-              placeholder="Jane Doe"
-              className="rounded-xl"
-              disabled={isSubmitting}
-            />
+      {submittedOrder ? (
+        <div className="space-y-6 rounded-3xl bg-card p-8 shadow-soft border border-border text-center animate-in fade-in zoom-in-95">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-500/10 text-emerald-600">
+            <CheckCircle2 className="h-8 w-8" />
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              placeholder="jane@example.com"
-              className="rounded-xl"
-              disabled={isSubmitting}
-            />
+            <h2 className="text-2xl font-semibold text-foreground">
+              Request Received Successfully!
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+              Thank you for ordering with SC Frost Heaven. Our bakery team is reviewing your celebration cake details and will issue your formal quotation shortly.
+            </p>
+          </div>
+
+          {/* Reference Card */}
+          <div className="rounded-2xl bg-secondary/30 p-4 border border-border/60 max-w-md mx-auto text-left text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Order Reference:</span>
+              <div className="flex items-center gap-1.5 font-mono font-bold text-foreground">
+                <span>#{submittedOrder.id.slice(0, 8).toUpperCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyOrderId(submittedOrder.id)}
+                  className="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title="Copy full Order ID"
+                >
+                  {copiedId ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Occasion:</span>
+              <span className="font-semibold text-foreground">{submittedOrder.event} Cake</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Event Date:</span>
+              <span className="font-medium text-foreground">{submittedOrder.date}</span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <Button
+              asChild
+              className="w-full sm:w-auto rounded-full bg-primary text-primary-foreground hover:bg-primary/90 px-6 h-11 gap-2 font-semibold shadow-xs cursor-pointer"
+            >
+              <Link
+                to="/track-order"
+                search={{
+                  orderId: submittedOrder.id,
+                  contact: submittedOrder.contact,
+                }}
+              >
+                <span>Track Order Live</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            {user && (
+              <Button
+                asChild
+                variant="outline"
+                className="w-full sm:w-auto rounded-full px-6 h-11 cursor-pointer text-xs"
+              >
+                <Link to="/account" search={{ orderId: submittedOrder.id }}>
+                  View in My Account
+                </Link>
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => setSubmittedOrder(null)}
+              className="w-full sm:w-auto rounded-full px-6 h-11 cursor-pointer text-xs"
+            >
+              Submit Another Request
+            </Button>
           </div>
         </div>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="event">Event Type</Label>
-            <Input
-              id="event"
-              name="event"
-              placeholder="Birthday, Wedding, Baby Shower..."
-              className="rounded-xl"
-              disabled={isSubmitting}
-            />
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-6 rounded-3xl bg-card p-8 shadow-soft">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="name">Your Name</Label>
+              <Input
+                id="name"
+                name="name"
+                defaultValue={profile?.full_name || ""}
+                placeholder="Jane Doe"
+                className="rounded-xl"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                defaultValue={user?.email || ""}
+                placeholder="jane@example.com"
+                className="rounded-xl"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
           </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="phone">
+                Contact Phone / WhatsApp <span className="text-xs text-muted-foreground">(Optional)</span>
+              </Label>
+              <Input
+                id="phone"
+                name="phone"
+                type="tel"
+                defaultValue={profile?.phone || ""}
+                placeholder="+94 70 241 1623"
+                className="rounded-xl"
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="event">Event Type</Label>
+              <Input
+                id="event"
+                name="event"
+                placeholder="Birthday, Wedding, Anniversary..."
+                className="rounded-xl"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="date">Event Date</Label>
             <Input
@@ -321,117 +447,126 @@ function CustomOrdersPage() {
               type="date"
               className="rounded-xl"
               disabled={isSubmitting}
+              required
             />
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="details">Cake Details</Label>
-          <Textarea
-            id="details"
-            name="details"
-            placeholder="Describe your dream cake — flavors, size, colors, theme, and any inspiration..."
-            rows={6}
-            className="rounded-xl"
-            disabled={isSubmitting}
-          />
-        </div>
-
-        {/* Reference Image Upload Field */}
-        <div className="space-y-2">
-          <Label htmlFor="images">Reference & Inspiration Photos (Optional)</Label>
-          <div className="rounded-2xl border border-dashed border-border/80 bg-secondary/20 p-4 transition-colors hover:bg-secondary/30">
-            <input
-              ref={fileInputRef}
-              id="images"
-              type="file"
-              accept="image/*"
-              multiple
+          <div className="space-y-2">
+            <Label htmlFor="details">Cake Details</Label>
+            <Textarea
+              id="details"
+              name="details"
+              placeholder="Describe your dream cake — flavors, tier size, colors, theme, messages, and any dietary preferences..."
+              rows={5}
+              className="rounded-xl"
               disabled={isSubmitting}
-              onChange={handleFileChange}
-              className="hidden"
+              required
             />
-            <label
-              htmlFor="images"
-              className={`flex flex-col items-center justify-center py-4 text-center ${
-                isSubmitting ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-              }`}
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary/80 text-primary mb-2">
-                <Upload className="h-5 w-5" />
-              </div>
-              <span className="text-sm font-medium text-foreground">
-                Click to browse reference photos
-              </span>
-              <span className="text-xs text-muted-foreground mt-1">
-                PNG, JPG, WEBP up to 5MB each (multiple photos supported)
-              </span>
-            </label>
-
-            {/* Selected Images Preview Grid */}
-            {selectedFiles.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-border/40">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    {selectedFiles.length} photo{selectedFiles.length !== 1 ? "s" : ""} selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clearFiles}
-                    disabled={isSubmitting}
-                    className="text-xs text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                  >
-                    Remove all
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                  {selectedFiles.map((file, index) => (
-                    <div
-                      key={`${file.name}-${index}`}
-                      className="group relative aspect-square overflow-hidden rounded-xl bg-muted border border-border/60 shadow-xs"
-                    >
-                      <img
-                        src={previews[index]?.url}
-                        alt={file.name || `Reference image ${index + 1}`}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFile(index)}
-                        disabled={isSubmitting}
-                        aria-label={`Remove ${file.name}`}
-                        className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm hover:bg-destructive hover:text-destructive-foreground transition-colors cursor-pointer"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                      <div className="absolute bottom-0 inset-x-0 bg-background/90 backdrop-blur-xs px-1.5 py-0.5 text-[10px] text-foreground truncate text-center">
-                        {file.name}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
-        </div>
 
-        <Button
-          type="submit"
-          className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
-          size="lg"
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Sending Request...
-            </>
-          ) : (
-            "Send Custom Order Request"
-          )}
-        </Button>
-      </form>
+          {/* Reference Image Upload Field */}
+          <div className="space-y-2">
+            <Label htmlFor="images">Reference & Inspiration Photos (Optional)</Label>
+            <div className="rounded-2xl border border-dashed border-border/80 bg-secondary/20 p-4 transition-colors hover:bg-secondary/30">
+              <input
+                ref={fileInputRef}
+                id="images"
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={isSubmitting}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <div className="flex flex-col items-center justify-center gap-2 py-4 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Upload className="h-6 w-6" />
+                </div>
+                <div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs font-semibold text-primary hover:underline cursor-pointer"
+                  >
+                    Click to select reference photos
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    JPG, PNG, WebP up to 5MB each. You can select multiple images.
+                  </p>
+                </div>
+              </div>
+
+              {/* Selected Files Preview Grid */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-4 border-t border-border/60 pt-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-foreground flex items-center gap-1.5">
+                      <ImageIcon className="h-3.5 w-3.5 text-primary" />
+                      Attached Photos ({selectedFiles.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearFiles}
+                      disabled={isSubmitting}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                    >
+                      Remove all
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                    {selectedFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="group relative aspect-square overflow-hidden rounded-xl bg-muted border border-border/60 shadow-xs"
+                      >
+                        <img
+                          src={previews[index]?.url}
+                          alt={file.name || `Reference image ${index + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile(index)}
+                          disabled={isSubmitting}
+                          aria-label={`Remove ${file.name}`}
+                          className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm hover:bg-destructive hover:text-destructive-foreground transition-colors cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                        <div className="absolute bottom-0 inset-x-0 bg-background/90 backdrop-blur-xs px-1.5 py-0.5 text-[10px] text-foreground truncate text-center">
+                          {file.name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-soft font-semibold h-11"
+            size="lg"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Submitting Request...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Send Custom Order Request
+              </>
+            )}
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

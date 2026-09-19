@@ -17,6 +17,7 @@ export interface Profile {
   address: string | null;
   city: string | null;
   role: "customer" | "admin";
+  avatar_url?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -25,6 +26,8 @@ export interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  avatarUrl: string | null;
+  authProviders: string[];
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -129,12 +132,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const avatarUrl =
+    (user?.user_metadata?.["avatar_url"] as string | undefined) ||
+    (user?.user_metadata?.["picture"] as string | undefined) ||
+    profile?.avatar_url ||
+    null;
+
+  const authProviders: string[] = (() => {
+    if (!user) return [];
+    const providers = new Set<string>();
+    if (user.app_metadata?.["provider"]) {
+      providers.add(String(user.app_metadata["provider"]));
+    }
+    if (Array.isArray(user.app_metadata?.["providers"])) {
+      user.app_metadata["providers"].forEach((p) => providers.add(String(p)));
+    }
+    if (Array.isArray(user.identities)) {
+      user.identities.forEach((i) => {
+        if (i.provider) providers.add(i.provider);
+      });
+    }
+    return Array.from(providers);
+  })();
+
   return (
     <AuthContext.Provider
       value={{
         user,
         session,
         profile,
+        avatarUrl,
+        authProviders,
         loading,
         signOut,
         refreshProfile,

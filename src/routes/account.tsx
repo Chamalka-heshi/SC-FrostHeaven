@@ -42,6 +42,8 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { ReviewSubmissionModal } from "@/components/review-submission-modal";
 import { CustomOrderTimeline, STATUS_LABELS } from "@/components/custom-order-timeline";
+import { PayHereButton } from "@/components/payhere-button";
+import { OrderReceiptModal } from "@/components/order-receipt-modal";
 import { createNoIndexMeta } from "@/lib/seo";
 
 export const Route = createFileRoute("/account")({
@@ -84,6 +86,8 @@ interface CustomOrder {
   amount_paid_lkr?: number | undefined;
   payment_status?: string | null | undefined;
   payment_method?: string | null | undefined;
+  payment_reference?: string | null | undefined;
+  target_pickup_time?: string | null | undefined;
   quote_issued_at?: string | null | undefined;
   deposit_paid_at?: string | null | undefined;
   fully_paid_at?: string | null | undefined;
@@ -108,7 +112,7 @@ function AccountPage() {
   const navigate = useNavigate();
   const searchParams = Route.useSearch();
   const deepLinkedOrderId = searchParams?.orderId;
-  const { user, profile, loading: authLoading, refreshProfile, signOut } = useAuth();
+  const { user, profile, avatarUrl, authProviders, loading: authLoading, refreshProfile, signOut } = useAuth();
 
   const [activeTab, setActiveTab] = useState<"orders" | "profile">("orders");
   const [orders, setOrders] = useState<CustomOrder[]>([]);
@@ -136,6 +140,16 @@ function AccountPage() {
   // Review submission modal state
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewModalOrder, setReviewModalOrder] = useState<CustomOrder | null>(null);
+
+  // Order receipt / invoice modal state
+  const [receiptModalOrder, setReceiptModalOrder] = useState<CustomOrder | null>(null);
+
+  // Online payment modal state (PayHere LKR)
+  const [onlinePaymentModal, setOnlinePaymentModal] = useState<{
+    order: CustomOrder;
+    selectedOption: "deposit" | "full";
+  } | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Profile edit state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -179,10 +193,23 @@ function AccountPage() {
       const { data, error } = await supabase.rpc("get_my_custom_orders");
 
       if (error) {
-        throw error;
-      }
+        console.warn("RPC get_my_custom_orders notice, using fallback table query:", error.message);
+        const { data: tableData, error: tableError } = await supabase
+          .from("custom_orders")
+          .select(
+            "id, customer_id, customer_name, customer_email, customer_phone, event_type, event_date, cake_details, status, customer_message, admin_notes, quoted_price_lkr, deposit_amount_lkr, amount_paid_lkr, payment_status, payment_method, payment_reference, target_pickup_time, quote_issued_at, deposit_paid_at, fully_paid_at, created_at, updated_at",
+          )
+          .eq("customer_id", user.id)
+          .order("created_at", { ascending: false });
 
-      setOrders((data as CustomOrder[]) || []);
+        if (tableError) {
+          throw tableError;
+        }
+
+        setOrders((tableData as CustomOrder[]) || []);
+      } else {
+        setOrders((data as CustomOrder[]) || []);
+      }
     } catch (err: unknown) {
       console.error("Error loading customer orders:", err);
       setOrdersError(err instanceof Error ? err.message : "Failed to load your orders");
@@ -405,6 +432,56 @@ function AccountPage() {
       setCopiedOrderId(null);
     }, 2000);
   };
+
+  // 7b. PayHere Payment Success Handler (Native LKR)
+  const handlePayHereSuccess = async (paymentId: string) => {
+    if (!onlinePaymentModal || !user) return;
+    setIsProcessingPayment(true);
+
+    const order = onlinePaymentModal.order;
+    const isDeposit = onlinePaymentModal.selectedOption === "deposit";
+    const amountToPay = isDeposit
+      ? (order.deposit_amount_lkr && order.deposit_amount_lkr > 0
+          ? order.deposit_amount_lkr
+          : order.quoted_price_lkr ?? 0)
+      : Math.max((order.quoted_price_lkr ?? 0) - (order.amount_paid_lkr ?? 0), 0);
+
+    try {
+      toast.success("Payment submitted! Verifying with bakery records...");
+      setOnlinePaymentModal(null);
+      await fetchOrders();
+
+      const newPaidAmount = (order.amount_paid_lkr ?? 0) + amountToPay;
+      const newPaymentStatus =
+        isDeposit && newPaidAmount < (order.quoted_price_lkr ?? 0) ? "deposit_paid" : "fully_paid";
+      const updatedRef = order.payment_reference
+        ? `${order.payment_reference}, PayHere: ${paymentId}`
+        : `PayHere: ${paymentId}`;
+
+      const updatedOrderObj: CustomOrder = {
+        ...order,
+        amount_paid_lkr: newPaidAmount,
+        payment_status: newPaymentStatus,
+        payment_method: "online_payment",
+        payment_reference: updatedRef,
+        status: order.status === "quoted" ? "accepted" : order.status,
+        updated_at: new Date().toISOString(),
+      };
+
+      setReceiptModalOrder(updatedOrderObj);
+
+      if (selectedOrder && selectedOrder.id === order.id) {
+        setSelectedOrder(updatedOrderObj);
+      }
+    } catch (err: unknown) {
+      console.error("Error updating order state:", err);
+      await fetchOrders();
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+
 
   // 8. Profile Update Handler
   const handleSaveProfile = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -677,17 +754,31 @@ function AccountPage() {
         {/* Account Header Banner */}
         <div className="flex flex-col gap-6 rounded-3xl bg-card p-6 shadow-soft sm:flex-row sm:items-center sm:justify-between sm:p-8 border border-border/60">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blush text-2xl font-bold text-primary shadow-xs">
-              {customerDisplayName.charAt(0).toUpperCase()}
-            </div>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={customerDisplayName}
+                className="h-16 w-16 rounded-2xl object-cover shadow-xs border border-border/60"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blush text-2xl font-bold text-primary shadow-xs">
+                {customerDisplayName.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-medium text-foreground sm:text-3xl">
                   {customerDisplayName}
                 </h1>
                 {profile?.role === "admin" && (
                   <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                     Admin
+                  </span>
+                )}
+                {authProviders.includes("google") && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400 border border-blue-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                    Google
                   </span>
                 )}
               </div>
@@ -1098,11 +1189,29 @@ function AccountPage() {
                           {/* Customer Confirmation Action Buttons */}
                           <div className="pt-2 flex flex-wrap items-center gap-3">
                             <Button
-                              onClick={() => setActionConfirmation({ type: "accept", order })}
+                              onClick={() =>
+                                setOnlinePaymentModal({
+                                  order,
+                                  selectedOption:
+                                    order.deposit_amount_lkr &&
+                                    order.deposit_amount_lkr > 0 &&
+                                    (order.amount_paid_lkr ?? 0) < order.deposit_amount_lkr
+                                      ? "deposit"
+                                      : "full",
+                                })
+                              }
                               className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer shadow-xs font-semibold"
                             >
-                              <CheckCircle2 className="h-4 w-4" />
-                              <span>Accept Quote</span>
+                              <CreditCard className="h-4 w-4" />
+                              <span>Pay Online (Cards / Wallets / Bank)</span>
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setActionConfirmation({ type: "accept", order })}
+                              className="rounded-full text-xs h-9 px-4 text-muted-foreground hover:text-foreground cursor-pointer"
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />
+                              <span>Accept Quote (Pay Offline)</span>
                             </Button>
                             <Button
                               variant="outline"
@@ -1120,8 +1229,37 @@ function AccountPage() {
                       {!isQuoted &&
                         order.quoted_price_lkr !== null &&
                         order.quoted_price_lkr !== undefined &&
-                        order.quoted_price_lkr > 0 &&
-                        renderPaymentProgressBar(order)}
+                        order.quoted_price_lkr > 0 && (
+                          <div className="space-y-3">
+                            {renderPaymentProgressBar(order)}
+                            {(order.quoted_price_lkr ?? 0) - (order.amount_paid_lkr ?? 0) > 0 &&
+                              !["completed", "declined", "cancelled"].includes(statusLower) && (
+                                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 bg-secondary/20 p-3 rounded-2xl border border-border/50">
+                                  <div className="text-xs">
+                                    <span className="text-muted-foreground">Outstanding balance: </span>
+                                    <span className="font-bold text-foreground">
+                                      {formatLKR(
+                                        (order.quoted_price_lkr ?? 0) - (order.amount_paid_lkr ?? 0),
+                                      )}
+                                    </span>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      setOnlinePaymentModal({
+                                        order,
+                                        selectedOption: "full",
+                                      })
+                                    }
+                                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer shadow-xs font-semibold"
+                                  >
+                                    <CreditCard className="h-3.5 w-3.5" />
+                                    <span>Pay Balance Online</span>
+                                  </Button>
+                                </div>
+                              )}
+                          </div>
+                        )}
 
                       {/* Customer Message from SC FrostHeaven when not in quoted state */}
                       {!isQuoted && (order.customer_message || order.admin_notes) && (
@@ -1187,14 +1325,27 @@ function AccountPage() {
                           )}
                         </div>
 
-                        <Button
-                          variant="secondary"
-                          onClick={() => handleOpenOrder(order)}
-                          className="rounded-full text-xs hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer gap-1.5"
-                        >
-                          <span>View Full Order Details</span>
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(order.amount_paid_lkr ?? 0) > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setReceiptModalOrder(order)}
+                              className="rounded-full text-xs h-8 px-3 gap-1.5 border-border/80 hover:bg-secondary cursor-pointer"
+                            >
+                              <Receipt className="h-3.5 w-3.5 text-primary" />
+                              <span>Receipt</span>
+                            </Button>
+                          )}
+                          <Button
+                            variant="secondary"
+                            onClick={() => handleOpenOrder(order)}
+                            className="rounded-full text-xs hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer gap-1.5"
+                          >
+                            <span>View Full Order Details</span>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1512,12 +1663,31 @@ function AccountPage() {
                     <Button
                       size="sm"
                       onClick={() =>
-                        setActionConfirmation({ type: "accept", order: selectedOrder })
+                        setOnlinePaymentModal({
+                          order: selectedOrder,
+                          selectedOption:
+                            selectedOrder.deposit_amount_lkr &&
+                            selectedOrder.deposit_amount_lkr > 0 &&
+                            (selectedOrder.amount_paid_lkr ?? 0) < selectedOrder.deposit_amount_lkr
+                              ? "deposit"
+                              : "full",
+                          })
                       }
                       className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-5 h-9 gap-1.5 cursor-pointer font-semibold shadow-xs"
                     >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>Accept Quote</span>
+                      <CreditCard className="h-4 w-4" />
+                      <span>Pay Online</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setActionConfirmation({ type: "accept", order: selectedOrder })
+                      }
+                      className="rounded-full text-xs h-9 px-4 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-1 text-emerald-600" />
+                      <span>Accept Quote (Pay Offline)</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -1804,7 +1974,7 @@ function AccountPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-between border-t border-border/60 px-6 py-4 bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-6 py-4 bg-card">
               {["submitted", "under_review"].includes(selectedOrder.status.toLowerCase()) ? (
                 <button
                   type="button"
@@ -1813,6 +1983,54 @@ function AccountPage() {
                 >
                   Cancel Order Request
                 </button>
+              ) : selectedOrder.status.toLowerCase() === "quoted" ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setOnlinePaymentModal({
+                        order: selectedOrder,
+                        selectedOption:
+                          selectedOrder.deposit_amount_lkr &&
+                          selectedOrder.deposit_amount_lkr > 0 &&
+                          (selectedOrder.amount_paid_lkr ?? 0) < selectedOrder.deposit_amount_lkr
+                            ? "deposit"
+                            : "full",
+                      })
+                    }
+                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer shadow-xs font-semibold"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    <span>Pay Online</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setActionConfirmation({ type: "accept", order: selectedOrder })}
+                    className="rounded-full text-xs h-8 px-3 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                    <span>Accept Quote</span>
+                  </Button>
+                </div>
+              ) : selectedOrder.quoted_price_lkr &&
+                (selectedOrder.quoted_price_lkr - (selectedOrder.amount_paid_lkr ?? 0)) > 0 &&
+                !["completed", "declined", "cancelled"].includes(selectedOrder.status.toLowerCase()) ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setOnlinePaymentModal({
+                        order: selectedOrder,
+                        selectedOption: "full",
+                      })
+                    }
+                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-4 h-8 gap-1.5 cursor-pointer shadow-xs font-semibold"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                    <span>Pay Outstanding Balance ({formatLKR((selectedOrder.quoted_price_lkr ?? 0) - (selectedOrder.amount_paid_lkr ?? 0))})</span>
+                  </Button>
+                </div>
               ) : (
                 <span className="text-xs text-muted-foreground">
                   Status:{" "}
@@ -1821,13 +2039,26 @@ function AccountPage() {
                   </span>
                 </span>
               )}
-              <Button
-                variant="outline"
-                onClick={() => setSelectedOrder(null)}
-                className="rounded-full text-xs cursor-pointer"
-              >
-                Close
-              </Button>
+              <div className="flex items-center gap-2">
+                {((selectedOrder.amount_paid_lkr ?? 0) > 0 || (selectedOrder.quoted_price_lkr ?? 0) > 0) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReceiptModalOrder(selectedOrder)}
+                    className="rounded-full text-xs h-8 px-3 gap-1.5 border-border/80 hover:bg-secondary cursor-pointer"
+                  >
+                    <Receipt className="h-3.5 w-3.5 text-primary" />
+                    <span>Receipt / Invoice</span>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedOrder(null)}
+                  className="rounded-full text-xs cursor-pointer"
+                >
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1961,6 +2192,176 @@ function AccountPage() {
         </div>
       )}
 
+      {/* ONLINE PAYMENT MODAL (PayHere LKR) */}
+      {onlinePaymentModal && (() => {
+        const modalOrder = onlinePaymentModal.order;
+        const quotedPrice = modalOrder.quoted_price_lkr ?? 0;
+        const amountPaid = modalOrder.amount_paid_lkr ?? 0;
+        const remainingBalance = Math.max(quotedPrice - amountPaid, 0);
+        const depositAmount =
+          modalOrder.deposit_amount_lkr && modalOrder.deposit_amount_lkr > 0
+            ? modalOrder.deposit_amount_lkr
+            : 0;
+        const isDepositOptionAvailable =
+          depositAmount > 0 && amountPaid < depositAmount && depositAmount < remainingBalance;
+
+        const isDeposit =
+          onlinePaymentModal.selectedOption === "deposit" && isDepositOptionAvailable;
+        const currentPayAmountLkr = isDeposit ? depositAmount : remainingBalance;
+
+        return (
+          <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className="relative w-full max-w-lg rounded-3xl bg-card p-6 shadow-2xl border border-border space-y-5 animate-in fade-in zoom-in-95 my-8">
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary shrink-0">
+                    <CreditCard className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      Online Payment Checkout
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {modalOrder.event_type} Cake • #{modalOrder.id.slice(0, 8).toUpperCase()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isProcessingPayment && setOnlinePaymentModal(null)}
+                  disabled={isProcessingPayment}
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Payment Type Option (Deposit vs Full Balance) */}
+              {isDepositOptionAvailable && (
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-foreground">
+                    Select Payment Amount
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOnlinePaymentModal({ ...onlinePaymentModal, selectedOption: "deposit" })
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        isDeposit
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                          : "border-border/60 hover:bg-secondary/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Required Deposit
+                        </span>
+                        {isDeposit && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </div>
+                      <p className="text-sm font-bold text-foreground mt-0.5">
+                        {formatLKR(depositAmount)}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        Secures cake booking slot
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOnlinePaymentModal({ ...onlinePaymentModal, selectedOption: "full" })
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        !isDeposit
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                          : "border-border/60 hover:bg-secondary/30"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          Full Balance
+                        </span>
+                        {!isDeposit && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </div>
+                      <p className="text-sm font-bold text-foreground mt-0.5">
+                        {formatLKR(remainingBalance)}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground block mt-0.5">
+                        Fully settles order
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Summary / Amount details banner */}
+              <div className="rounded-2xl bg-secondary/30 p-3.5 border border-border/60 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Order:</span>
+                  <span className="font-semibold text-foreground">
+                    {modalOrder.event_type} Celebration Cake
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Payment Type:</span>
+                  <span className="font-medium text-foreground">
+                    {isDeposit ? "Initial Booking Deposit" : "Full Quoted Balance"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-t border-border/40 pt-1.5">
+                  <span className="font-semibold text-foreground">Amount to Pay:</span>
+                  <span className="text-base font-bold text-primary">
+                    {formatLKR(currentPayAmountLkr)}
+                  </span>
+                </div>
+              </div>
+
+              {/* PayHere Gateway Action Box */}
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Pay securely in Sri Lankan Rupees (LKR) using Visa, Mastercard, AMEX, Genie, eZ Cash, FriMi, or Direct Bank Transfer via PayHere.
+                  </p>
+                  <PayHereButton
+                    amountLkr={currentPayAmountLkr}
+                    orderId={modalOrder.id}
+                    itemDescription={`${modalOrder.event_type} Cake Order - SC Frost Heaven`}
+                    customerName={
+                      modalOrder.customer_name || profile?.full_name || "Valued Customer"
+                    }
+                    customerEmail={
+                      modalOrder.customer_email || user?.email || "customer@scfrostheaven.com"
+                    }
+                    customerPhone={modalOrder.customer_phone || profile?.phone || ""}
+                    customerAddress={profile?.address || "Mirissa"}
+                    customerCity={profile?.city || "Mirissa"}
+                    onSuccess={handlePayHereSuccess}
+                    disabled={isProcessingPayment}
+                    buttonText={`Pay ${formatLKR(currentPayAmountLkr)} via PayHere`}
+                  />
+                </div>
+              </div>
+
+              {/* Processing Overlay */}
+              {isProcessingPayment && (
+                <div className="absolute inset-0 bg-background/80 backdrop-blur-xs rounded-3xl flex flex-col items-center justify-center gap-2 z-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-xs font-semibold text-foreground">
+                    Recording verified payment...
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Please do not close this window.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Review Submission Modal */}
       <ReviewSubmissionModal
         isOpen={isReviewModalOpen}
@@ -1973,6 +2374,13 @@ function AccountPage() {
         }}
         defaultOccasion={reviewModalOrder?.event_type}
         defaultCustomerName={reviewModalOrder?.customer_name || profile?.full_name || undefined}
+      />
+
+      {/* Order Receipt & Printable Invoice Modal */}
+      <OrderReceiptModal
+        order={receiptModalOrder as any}
+        isOpen={Boolean(receiptModalOrder)}
+        onClose={() => setReceiptModalOrder(null)}
       />
     </div>
   );

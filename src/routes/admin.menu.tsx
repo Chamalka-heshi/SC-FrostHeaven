@@ -22,6 +22,7 @@ import {
   FolderPlus,
   AlertTriangle,
   X,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,11 @@ function AdminMenuPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<MenuItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Inline Quick Editing States
+  const [inlineEditingPriceId, setInlineEditingPriceId] = useState<string | null>(null);
+  const [inlinePriceValue, setInlinePriceValue] = useState<string>("");
+  const [isUpdatingInlinePrice, setIsUpdatingInlinePrice] = useState(false);
 
   // Form States (Add / Edit)
   const [formTitle, setFormTitle] = useState("");
@@ -268,6 +274,50 @@ function AdminMenuPage() {
     }
   };
 
+  // Start inline price edit
+  const handleStartInlinePriceEdit = (item: MenuItem) => {
+    setInlineEditingPriceId(item.id);
+    setInlinePriceValue(item.price_lkr.toString());
+  };
+
+  // Save inline price edit
+  const handleSaveInlinePrice = async (itemId: string) => {
+    const priceNum = parseFloat(inlinePriceValue);
+    if (isNaN(priceNum) || priceNum < 0) {
+      toast.error("Please enter a valid price in LKR.");
+      return;
+    }
+    try {
+      setIsUpdatingInlinePrice(true);
+      await updateMenuItem(itemId, { price_lkr: priceNum });
+      setItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, price_lkr: Math.round(priceNum) } : i)),
+      );
+      setInlineEditingPriceId(null);
+      toast.success("Price updated successfully!");
+    } catch (err) {
+      console.error("Failed to update price inline:", err);
+      toast.error("Failed to update price.");
+    } finally {
+      setIsUpdatingInlinePrice(false);
+    }
+  };
+
+  // Change badge directly
+  const handleInlineBadgeChange = async (item: MenuItem, newBadge: string) => {
+    try {
+      const badgeVal = newBadge === "None" ? null : newBadge;
+      await updateMenuItem(item.id, { badge: badgeVal });
+      setItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, badge: badgeVal } : i)),
+      );
+      toast.success(`Badge updated for "${item.title}".`);
+    } catch (err) {
+      console.error("Failed to update badge:", err);
+      toast.error("Failed to update badge.");
+    }
+  };
+
   // Confirm Delete Cake
   const handleDeleteConfirm = async () => {
     if (!deletingItem) return;
@@ -394,50 +444,68 @@ function AdminMenuPage() {
       </div>
 
       {/* FILTER & SEARCH BAR */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-card p-4 rounded-2xl border border-border/70 shadow-xs">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search cakes by title, description, or badge..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8 rounded-full border-border/70 bg-background"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+      <div className="space-y-4 bg-card p-4 rounded-2xl border border-border/70 shadow-xs">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search cakes by title, description, or badge..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-8 rounded-full border-border/70 bg-background"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Availability Filter */}
+            <select
+              value={availabilityFilter}
+              onChange={(e) => setAvailabilityFilter(e.target.value as any)}
+              className="h-9 rounded-full border border-border/70 bg-background px-3.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+              <option value="all">All Availability ({stats.total})</option>
+              <option value="available">Available Only ({stats.available})</option>
+              <option value="unavailable">Sold Out / Hidden ({stats.unavailable})</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Category Filter */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="h-9 rounded-full border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+        {/* Quick Category Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
+          <button
+            onClick={() => setSelectedCategory("All")}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
+              selectedCategory === "All"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            }`}
           >
-            <option value="All">All Categories</option>
-            {MENU_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-
-          {/* Availability Filter */}
-          <select
-            value={availabilityFilter}
-            onChange={(e) => setAvailabilityFilter(e.target.value as any)}
-            className="h-9 rounded-full border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            <option value="all">All Availability</option>
-            <option value="available">Available Only</option>
-            <option value="unavailable">Sold Out / Hidden</option>
-          </select>
+            All Categories ({items.length})
+          </button>
+          {MENU_CATEGORIES.map((cat) => {
+            const count = items.filter((i) => i.category === cat).length;
+            return (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
+                  selectedCategory === cat
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -507,7 +575,7 @@ function AdminMenuPage() {
                   <button
                     onClick={() => handleToggleAvailability(item)}
                     title={item.is_available ? "Click to mark as Sold Out" : "Click to mark as Available"}
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold backdrop-blur-xs shadow-xs transition-colors ${
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold backdrop-blur-xs shadow-xs transition-colors cursor-pointer ${
                       item.is_available
                         ? "bg-emerald-500/90 text-white hover:bg-emerald-600"
                         : "bg-amber-500/90 text-white hover:bg-amber-600"
@@ -542,10 +610,59 @@ function AdminMenuPage() {
 
                 <div className="mt-auto pt-4 flex items-center justify-between border-t border-border/50">
                   <div>
-                    <span className="text-xs text-muted-foreground font-medium block">Price</span>
-                    <span className="text-xl font-bold text-primary">
-                      {formatLKR(item.price_lkr)}
-                    </span>
+                    <span className="text-xs text-muted-foreground font-medium block">Price (LKR)</span>
+                    {inlineEditingPriceId === item.id ? (
+                      <div className="flex items-center gap-1 mt-1">
+                        <Input
+                          type="number"
+                          value={inlinePriceValue}
+                          onChange={(e) => setInlinePriceValue(e.target.value)}
+                          className="h-7 w-24 text-xs font-bold rounded-lg px-2"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveInlinePrice(item.id);
+                            if (e.key === "Escape") setInlineEditingPriceId(null);
+                          }}
+                          disabled={isUpdatingInlinePrice}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveInlinePrice(item.id)}
+                          disabled={isUpdatingInlinePrice}
+                          className="h-7 w-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center hover:bg-emerald-600 transition-colors cursor-pointer"
+                          title="Save Price"
+                        >
+                          {isUpdatingInlinePrice ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInlineEditingPriceId(null)}
+                          disabled={isUpdatingInlinePrice}
+                          className="h-7 w-7 rounded-lg bg-secondary text-foreground flex items-center justify-center hover:bg-secondary/80 transition-colors cursor-pointer"
+                          title="Cancel"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xl font-bold text-primary">
+                          {formatLKR(item.price_lkr)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleStartInlinePriceEdit(item)}
+                          className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                          title="Quick Edit Price"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -554,7 +671,7 @@ function AdminMenuPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => openEditDialog(item)}
-                      className="h-8 rounded-full border-border/80 px-3 hover:bg-primary/10 hover:text-primary text-xs"
+                      className="h-8 rounded-full border-border/80 px-3 hover:bg-primary/10 hover:text-primary text-xs cursor-pointer"
                     >
                       <Edit3 className="h-3.5 w-3.5 mr-1" />
                       <span>Edit</span>
@@ -564,7 +681,7 @@ function AdminMenuPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setDeletingItem(item)}
-                      className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive cursor-pointer"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

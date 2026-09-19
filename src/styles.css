@@ -212,6 +212,24 @@
     border: none !important;
   }
 
+  #sc-frostheaven-printable-receipt,
+  #sc-frostheaven-printable-receipt * {
+    visibility: visible;
+  }
+
+  #sc-frostheaven-printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 1.5rem;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
   @page {
     size: auto;
     margin: 10mm;

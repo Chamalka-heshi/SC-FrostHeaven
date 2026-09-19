@@ -17,16 +17,16 @@ import appCss from "../styles.css?url";
 import logo from "../assets/logo.png";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CartDrawer } from "@/components/cart-drawer";
-import { useCartSync } from "@/hooks/use-cart-sync";
 import { NotificationCenter } from "@/components/notification-center";
 import { createBakeryJsonLd, BUSINESS_INFO } from "@/lib/seo";
 
 const navLinks = [
   { to: "/", label: "Home" },
   { to: "/menu", label: "Menu" },
-  { to: "/about", label: "About" },
   { to: "/custom-orders", label: "Custom Orders" },
+  { to: "/track-order", label: "Track Order" },
   { to: "/testimonials", label: "Testimonials" },
+  { to: "/about", label: "About" },
   { to: "/contact", label: "Contact" },
 ];
 
@@ -153,6 +153,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         type: "application/ld+json",
         children: JSON.stringify(createBakeryJsonLd()),
+      },
+      {
+        src: "https://sandbox.payhere.lk/lib/payhere.js",
+        async: true,
       },
     ],
   }),
@@ -435,7 +439,6 @@ function Footer() {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  useCartSync();
 
   return (
     <QueryClientProvider client={queryClient}>

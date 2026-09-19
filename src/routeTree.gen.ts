@@ -21,6 +21,7 @@ import { Route as MenuRouteImport } from './routes/menu'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as TestimonialsRouteImport } from './routes/testimonials'
+import { Route as TrackOrderRouteImport } from './routes/track-order'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin.analytics'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
@@ -92,6 +93,11 @@ const TestimonialsRoute = TestimonialsRouteImport.update({
   path: '/testimonials',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrackOrderRoute = TrackOrderRouteImport.update({
+  id: '/track-order',
+  path: '/track-order',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/track-order': typeof TrackOrderRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/inquiries': typeof AdminInquiriesRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/track-order': typeof TrackOrderRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/inquiries': typeof AdminInquiriesRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/testimonials': typeof TestimonialsRoute
+  '/track-order': typeof TrackOrderRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/customers': typeof AdminCustomersRoute
   '/admin/inquiries': typeof AdminInquiriesRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/testimonials'
+    | '/track-order'
     | '/admin/analytics'
     | '/admin/customers'
     | '/admin/inquiries'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/testimonials'
+    | '/track-order'
     | '/admin/analytics'
     | '/admin/customers'
     | '/admin/inquiries'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/testimonials'
+    | '/track-order'
     | '/admin/analytics'
     | '/admin/customers'
     | '/admin/inquiries'
@@ -302,6 +314,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   TestimonialsRoute: typeof TestimonialsRoute
+  TrackOrderRoute: typeof TrackOrderRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   ProductHandleRoute: typeof ProductHandleRoute
 }
@@ -390,6 +403,13 @@ declare module '@tanstack/react-router' {
       path: '/testimonials'
       fullPath: '/testimonials'
       preLoaderRoute: typeof TestimonialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/track-order': {
+      id: '/track-order'
+      path: '/track-order'
+      fullPath: '/track-order'
+      preLoaderRoute: typeof TrackOrderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -502,6 +522,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   TestimonialsRoute: TestimonialsRoute,
+  TrackOrderRoute: TrackOrderRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   ProductHandleRoute: ProductHandleRoute,
 }
